@@ -4,8 +4,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Mobile Remote Receiver</title>
     <style>
-        body, html { margin: 0; padding: 0; overflow: hidden; background: #000; width: 100%; height: 100%; }
-        video { width: 100%; height: 100%; object-fit: contain; }
+        body, html { margin: 0; padding: 0; overflow: hidden; background: #222; width: 100%; height: 100%; }
+        video { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
     </style>
 </head>
 <body>
@@ -14,49 +14,55 @@
 
     <script>
         const video = document.getElementById('remoteVideo');
-        const pc = new RTCPeerConnection();
+        const pc = new RTCPeerConnection({
+            iceServers: [{ urls: 'stun:://google.com' }]
+        });
         
-        // FIX: Force the browser to declare it is ready to receive a video track
         pc.addTransceiver('video', { direction: 'recvonly' });
-        
-        // Create the reliability-free data channel for inputs
         const dataChannel = pc.createDataChannel("inputs", { ordered: true });
 
-        // Display incoming video track
         pc.ontrack = (event) => {
             if (event.streams && event.streams[0]) {
                 video.srcObject = event.streams[0];
+            } else {
+                const inboundStream = new MediaStream();
+                inboundStream.addTrack(event.track);
+                video.srcObject = inboundStream;
             }
+            video.play().catch(e => console.log("Waiting for user touch gesture to unblock video stream..."));
         };
 
-        // Touch event tracking
-        video.addEventListener('touchmove', (e) => {
+        // Standardized event execution logic wrapper
+        function processTouch(e, type) {
             e.preventDefault();
-            if (dataChannel.readyState !== "open") return;
+            if (video.paused) video.play().catch(() => {});
+            
+            if (!dataChannel || dataChannel.readyState !== "open") return;
 
             const touch = e.touches[0];
+            if (!touch && type === "mousemove") return;
+
             const rect = video.getBoundingClientRect();
-            
-            const relativeX = (touch.clientX - rect.left) / rect.width;
-            const relativeY = (touch.clientY - rect.top) / rect.height;
+            const clientX = touch ? touch.clientX : e.changedTouches[0].clientX;
+            const clientY = touch ? touch.clientY : e.changedTouches[0].clientY;
+
+            const relativeX = (clientX - rect.left) / rect.width;
+            const relativeY = (clientY - rect.top) / rect.height;
 
             if (relativeX >= 0 && relativeX <= 1 && relativeY >= 0 && relativeY <= 1) {
-                dataChannel.send(JSON.stringify({
-                    type: "mousemove",
-                    x: relativeX,
-                    y: relativeY
-                }));
+                if (type === "mousemove") {
+                    dataChannel.send(JSON.stringify({ type: "mousemove", x: relativeX, y: relativeY }));
+                } else if (type === "click") {
+                    dataChannel.send(JSON.stringify({ type: "click" }));
+                }
             }
+        }
+
+        window.addEventListener('touchmove', (e) => processTouch(e, "mousemove"), { passive: false });
+        window.addEventListener('touchend', (e) => {
+            if (e.changedTouches.length === 1) processTouch(e, "click");
         }, { passive: false });
 
-        // Handle single tap click actions
-        video.addEventListener('touchstart', (e) => {
-            if (dataChannel.readyState === "open" && e.touches.length === 1) {
-                dataChannel.send(JSON.stringify({ type: "click" }));
-            }
-        });
-
-        // Initialize WebRTC Handshake
         async function start() {
             const offer = await pc.createOffer();
             await pc.setLocalDescription(offer);

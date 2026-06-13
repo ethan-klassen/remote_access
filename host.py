@@ -1,62 +1,72 @@
 import asyncio
 import json
-import logging
 from aiohttp import web
 from aiortc import RTCPeerConnection, RTCSessionDescription, VideoStreamTrack
+from aiortc.rtcrtpsender import RTCRtpSender
 from av import VideoFrame
 import mss
 import pyautogui
 
-# Disable PyAutoGUI delay for lower latency
 pyautogui.PAUSE = 0
 
 class ScreenCaptureTrack(VideoStreamTrack):
-    """Custom WebRTC video track that captures the PC monitor."""
+    """Custom WebRTC video track that captures the PC monitor in YUV420p."""
     def __init__(self):
         super().__init__()
-        # FIX: Changed from mss.mss() to mss.MSS() to fix deprecation warning
         self.sct = mss.MSS()
-        self.monitor = self.sct.monitors[1] # Targets primary monitor
+        self.monitor = self.sct.monitors[1]  # Target primary monitor explicitly
 
     async def recv(self):
         pts, time_base = await self.next_timestamp()
         
-        # Capture raw pixels from screen
+        # Capture desktop screenshot
         img = self.sct.grab(self.monitor)
         
-        # Convert raw BGRA pixels to video frame
-        frame = VideoFrame.from_ndarray(img.raw, format="bgra")
-        frame.pts = pts
-        frame.time_base = time_base
-        return frame
+        # FIX: Build from raw BGRA and re-mux directly into standard YUV420P format
+        # This allows mobile hardcoded decoders to actually process the image array.
+        bgra_frame = VideoFrame.from_ndarray(img.raw, format="bgra")
+        yuv_frame = bgra_frame.reformat(width=self.monitor["width"], height=self.monitor["height"], format="yuv420p")
+        
+        yuv_frame.pts = pts
+        yuv_frame.time_base = time_base
+        
+        # Lock to 20 FPS to protect network bandwidth
+        await asyncio.sleep(1 / 20)
+        return yuv_frame
 
 async def handle_index(request):
-    """Serves the mobile phone interface file."""
     return web.FileResponse('index.html')
 
 async def handle_offer(request):
-    """Handles the WebRTC handshake (SDP Exchange) and mouse data channel."""
     params = await request.json()
     offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
 
     pc = RTCPeerConnection()
     
-    # Track setup
     video_track = ScreenCaptureTrack()
-    pc.addTrack(video_track)
+    sender = pc.addTrack(video_track)
+
+    # Force standard H264 baseline profiles that match mobile system hardware
+    capabilities = RTCRtpSender.getCapabilities("video")
+    h264_codecs = [c for c in capabilities.codecs if c.name == "H264"]
+    if h264_codecs:
+        sender.setCodecPreferences(h264_codecs)
 
     @pc.on("datachannel")
     def on_datachannel(channel):
         @channel.on("message")
         def on_message(message):
-            data = json.loads(message)
-            if data["type"] == "mousemove":
-                monitor = video_track.monitor
-                target_x = int(data["x"] * monitor["width"]) + monitor["left"]
-                target_y = int(data["y"] * monitor["height"]) + monitor["top"]
-                pyautogui.moveTo(target_x, target_y)
-            elif data["type"] == "click":
-                pyautogui.click()
+            try:
+                data = json.loads(message)
+                if data["type"] == "mousemove":
+                    monitor = video_track.monitor
+                    target_x = int(data["x"] * monitor["width"]) + monitor["left"]
+                    target_y = int(data["y"] * monitor["height"]) + monitor["top"]
+                    pyautogui.moveTo(target_x, target_y)
+                elif data["type"] == "click":
+                    pyautogui.click()
+            except Exception as e:
+                print(f"Input processing failure: {e}")
 
     await pc.setRemoteDescription(offer)
     answer = await pc.createAnswer()

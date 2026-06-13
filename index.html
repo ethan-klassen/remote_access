@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mobile Remote Receiver</title>
+    <style>
+        body, html { margin: 0; padding: 0; overflow: hidden; background: #000; width: 100%; height: 100%; }
+        video { width: 100%; height: 100%; object-fit: contain; }
+    </style>
+</head>
+<body>
+
+    <video id="remoteVideo" autoplay playsinline muted></video>
+
+    <script>
+        const video = document.getElementById('remoteVideo');
+        const pc = new RTCPeerConnection();
+        
+        // FIX: Force the browser to declare it is ready to receive a video track
+        pc.addTransceiver('video', { direction: 'recvonly' });
+        
+        // Create the reliability-free data channel for inputs
+        const dataChannel = pc.createDataChannel("inputs", { ordered: true });
+
+        // Display incoming video track
+        pc.ontrack = (event) => {
+            if (event.streams && event.streams[0]) {
+                video.srcObject = event.streams[0];
+            }
+        };
+
+        // Touch event tracking
+        video.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            if (dataChannel.readyState !== "open") return;
+
+            const touch = e.touches[0];
+            const rect = video.getBoundingClientRect();
+            
+            const relativeX = (touch.clientX - rect.left) / rect.width;
+            const relativeY = (touch.clientY - rect.top) / rect.height;
+
+            if (relativeX >= 0 && relativeX <= 1 && relativeY >= 0 && relativeY <= 1) {
+                dataChannel.send(JSON.stringify({
+                    type: "mousemove",
+                    x: relativeX,
+                    y: relativeY
+                }));
+            }
+        }, { passive: false });
+
+        // Handle single tap click actions
+        video.addEventListener('touchstart', (e) => {
+            if (dataChannel.readyState === "open" && e.touches.length === 1) {
+                dataChannel.send(JSON.stringify({ type: "click" }));
+            }
+        });
+
+        // Initialize WebRTC Handshake
+        async function start() {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+
+            const response = await fetch('/offer', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sdp: pc.localDescription.sdp, type: pc.localDescription.type })
+            });
+
+            const answer = await response.json();
+            await pc.setRemoteDescription(new RTCSessionDescription(answer));
+        }
+
+        start();
+    </script>
+</body>
+</html>

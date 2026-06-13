@@ -4,8 +4,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Mobile Remote Receiver</title>
     <style>
-        body, html { margin: 0; padding: 0; overflow: hidden; background: #222; width: 100%; height: 100%; }
-        video { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
+        body, html { margin: 0; padding: 0; overflow: hidden; background: #111; width: 100%; height: 100%; }
+        video { width: 100%; height: 100%; object-fit: contain; background: #000; display: block; }
     </style>
 </head>
 <body>
@@ -14,14 +14,14 @@
 
     <script>
         const video = document.getElementById('remoteVideo');
-        const pc = new RTCPeerConnection({
-            iceServers: [{ urls: 'stun:://google.com' }]
-        });
+        const pc = new RTCPeerConnection({ iceServers: [] });
         
         pc.addTransceiver('video', { direction: 'recvonly' });
         const dataChannel = pc.createDataChannel("inputs", { ordered: true });
 
+        // FIX: Enhanced to continuously check track additions and execute paint layers natively
         pc.ontrack = (event) => {
+            console.log("Inbound video track received:", event.track);
             if (event.streams && event.streams[0]) {
                 video.srcObject = event.streams[0];
             } else {
@@ -29,39 +29,42 @@
                 inboundStream.addTrack(event.track);
                 video.srcObject = inboundStream;
             }
-            video.play().catch(e => console.log("Waiting for user touch gesture to unblock video stream..."));
+            video.play().catch(err => console.log("Stream container active playback warning:", err));
         };
 
-        // Standardized event execution logic wrapper
-        function processTouch(e, type) {
+        // Touch Tracking logic engine integration layer
+        video.addEventListener('touchmove', (e) => {
             e.preventDefault();
-            if (video.paused) video.play().catch(() => {});
             
+            if (video.paused) {
+                video.play().catch(() => {});
+            }
+
             if (!dataChannel || dataChannel.readyState !== "open") return;
 
             const touch = e.touches[0];
-            if (!touch && type === "mousemove") return;
-
             const rect = video.getBoundingClientRect();
-            const clientX = touch ? touch.clientX : e.changedTouches[0].clientX;
-            const clientY = touch ? touch.clientY : e.changedTouches[0].clientY;
-
-            const relativeX = (clientX - rect.left) / rect.width;
-            const relativeY = (clientY - rect.top) / rect.height;
+            
+            const relativeX = (touch.clientX - rect.left) / rect.width;
+            const relativeY = (touch.clientY - rect.top) / rect.height;
 
             if (relativeX >= 0 && relativeX <= 1 && relativeY >= 0 && relativeY <= 1) {
-                if (type === "mousemove") {
-                    dataChannel.send(JSON.stringify({ type: "mousemove", x: relativeX, y: relativeY }));
-                } else if (type === "click") {
-                    dataChannel.send(JSON.stringify({ type: "click" }));
-                }
+                dataChannel.send(JSON.stringify({
+                    type: "mousemove",
+                    x: relativeX,
+                    y: relativeY
+                }));
             }
-        }
-
-        window.addEventListener('touchmove', (e) => processTouch(e, "mousemove"), { passive: false });
-        window.addEventListener('touchend', (e) => {
-            if (e.changedTouches.length === 1) processTouch(e, "click");
         }, { passive: false });
+
+        video.addEventListener('touchstart', (e) => {
+            if (video.paused) {
+                video.play().catch(() => {});
+            }
+            if (dataChannel && dataChannel.readyState === "open" && e.touches.length === 1) {
+                dataChannel.send(JSON.stringify({ type: "click" }));
+            }
+        });
 
         async function start() {
             const offer = await pc.createOffer();

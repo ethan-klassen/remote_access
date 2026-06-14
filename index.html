@@ -18,32 +18,37 @@
 </head>
 <body>
 
-    <video id="remoteVideo" autoplay playsinline muted></video>
+    <video id="remoteVideo" autoplay playsinline></video>
 
     <script>
         const video = document.getElementById('remoteVideo');
         const pc = new RTCPeerConnection({ iceServers: [] });
         
         pc.addTransceiver('video', { direction: 'recvonly' });
+        pc.addTransceiver('audio', { direction: 'recvonly' });
         const dataChannel = pc.createDataChannel("inputs", { ordered: true });
 
+        // Single shared stream — all incoming tracks (video + audio) get added here
+        const mediaStream = new MediaStream();
+        video.srcObject = mediaStream;
+
         pc.ontrack = (event) => {
-            if (event.streams && event.streams[0]) {
-                video.srcObject = event.streams[0];
-            } else {
-                const inboundStream = new MediaStream();
-                inboundStream.addTrack(event.track);
-                video.srcObject = inboundStream;
-            }
+            mediaStream.addTrack(event.track);
         };
+
+        // Unlock autoplay on first touch (required by mobile browsers for unmuted audio)
+        let audioUnlocked = false;
+        function unlockAudio() {
+            if (!audioUnlocked && video.paused) {
+                video.play().catch(() => {});
+                audioUnlocked = true;
+            }
+        }
 
         // Restored original working touch mapping engine
         video.addEventListener('touchmove', (e) => {
             e.preventDefault();
-            
-            if (video.paused) {
-                video.play().catch(() => {});
-            }
+            unlockAudio();
 
             if (!dataChannel || dataChannel.readyState !== "open") return;
 
@@ -63,9 +68,7 @@
         }, { passive: false });
 
         video.addEventListener('touchstart', (e) => {
-            if (video.paused) {
-                video.play().catch(() => {});
-            }
+            unlockAudio();
             if (dataChannel && dataChannel.readyState === "open" && e.touches.length === 1) {
                 dataChannel.send(JSON.stringify({ type: "click" }));
             }

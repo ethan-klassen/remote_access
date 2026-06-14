@@ -4,8 +4,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Mobile Remote Receiver</title>
     <style>
-        body, html { margin: 0; padding: 0; overflow: hidden; background: #111; width: 100%; height: 100%; }
-        video { width: 100%; height: 100%; object-fit: contain; background: #000; display: block; }
+        body, html { margin: 0; padding: 0; overflow: hidden; background: #111; width: 100%; height: 100%; user-select: none; }
+        video { 
+            width: 100%; 
+            height: 100%; 
+            object-fit: contain; 
+            background: #000; 
+            display: block; 
+            -webkit-transform: translateZ(0); 
+            transform: translateZ(0);
+        }
     </style>
 </head>
 <body>
@@ -19,9 +27,7 @@
         pc.addTransceiver('video', { direction: 'recvonly' });
         const dataChannel = pc.createDataChannel("inputs", { ordered: true });
 
-        // FIX: Enhanced to continuously check track additions and execute paint layers natively
         pc.ontrack = (event) => {
-            console.log("Inbound video track received:", event.track);
             if (event.streams && event.streams[0]) {
                 video.srcObject = event.streams[0];
             } else {
@@ -29,10 +35,9 @@
                 inboundStream.addTrack(event.track);
                 video.srcObject = inboundStream;
             }
-            video.play().catch(err => console.log("Stream container active playback warning:", err));
         };
 
-        // Touch Tracking logic engine integration layer
+        // Restored original working touch mapping engine
         video.addEventListener('touchmove', (e) => {
             e.preventDefault();
             

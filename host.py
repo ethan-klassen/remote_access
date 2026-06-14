@@ -9,6 +9,10 @@ import av
 import mss
 import pyautogui
 
+# FIX: Set the global VP8 software engine to a crisp baseline bitrate profile
+import aiortc.codecs.vpx
+aiortc.codecs.vpx.DEFAULT_BITRATE = 6000000
+
 pyautogui.PAUSE = 0
 
 class ScreenCaptureTrack(VideoStreamTrack):
@@ -31,7 +35,7 @@ class ScreenCaptureTrack(VideoStreamTrack):
         
         self._id = "video-stream"
         self.start_time = time.time()
-        print(f"High-Fidelity 1080p Engine Active: {self.width}x{self.height}")
+        print(f"Universal High-Quality Engine Active: {self.width}x{self.height}")
 
     async def recv(self):
         current_now = time.time()
@@ -45,18 +49,17 @@ class ScreenCaptureTrack(VideoStreamTrack):
         bgra_frame = av.VideoFrame(self.width, self.height, format="bgra")
         bgra_frame.planes[0].update(img.bgra)
         
-        # FIX: Added 'lanczos' interpolation to make fine text elements, lines, and details 
-        # look razor-sharp on your iPad retina screen.
+        # Convert to standardized YUV420p format using fast bilinear matrix mapping.
         yuv_frame = bgra_frame.reformat(
             width=self.width, 
             height=self.height, 
             format="yuv420p", 
-            interpolation="LANCZOS"
+            interpolation="BILINEAR"
         )
         yuv_frame.pts = pts
         yuv_frame.time_base = fractions.Fraction(1, 90000)
         
-        await asyncio.sleep(1 / 30)  # Smooth 30 FPS pacing execution sequence
+        await asyncio.sleep(1 / 30)  # Stable 30 FPS pacing execution sequence
         return yuv_frame
 
 async def handle_index(request):
@@ -70,14 +73,15 @@ async def handle_offer(request):
     video_track = ScreenCaptureTrack()
     pc.addTrack(video_track)
 
-    # Force standard hardware-friendly H.264 profiles for optimal Apple/iOS decoding
+    # FIX: Explicitly loop through the active transceivers to prioritize VP8 profiles.
+    # This prevents the computer from choosing broken H.264 parameters and keeps video rendering working.
     for transceiver in pc.getTransceivers():
         if transceiver.kind == "video":
-            transceiver.sender.contentHint = "detail"  # Prioritize text sharpness over fluid motion
+            transceiver.sender.contentHint = "detail"  # Prioritize text sharpness universally
             capabilities = RTCRtpSender.getCapabilities("video")
-            h264_codecs = [c for c in capabilities.codecs if c.name == "H264"]
-            if h264_codecs:
-                transceiver.setCodecPreferences(h264_codecs)
+            vp8_codecs = [c for c in capabilities.codecs if c.name == "VP8"]
+            if vp8_codecs:
+                transceiver.setCodecPreferences(vp8_codecs)
 
     @pc.on("datachannel")
     def on_datachannel(channel):
@@ -97,23 +101,6 @@ async def handle_offer(request):
 
     await pc.setRemoteDescription(offer)
     answer = await pc.createAnswer()
-    
-    # FIX: Cleaned and bulletproofed the SDP text manipulation block to prevent crashes.
-    # It extracts the payload ID correctly and injects high-quality bitrate tags safely.
-    sdp_lines = answer.sdp.split("\r\n")
-    modified_sdp = []
-    
-    for line in sdp_lines:
-        modified_sdp.append(line)
-        if line.startswith("a=rtpmap:") and "H264" in line:
-            try:
-                # Safely split out the payload ID: "a=rtpmap:102 H264/90000" -> "102"
-                payload_id = line.split(":")[1].split()[0]
-                modified_sdp.append(f"a=fmtp:{payload_id} profile-level-id=42e01f;level-asymmetry-allowed=1;packetization-mode=1;x-google-start-bitrate=6000;x-google-max-bitrate=8000;x-google-min-bitrate=3000")
-            except Exception as e:
-                print(f"SDP optimization error skipped: {e}")
-    
-    answer.sdp = "\r\n".join(modified_sdp)
     await pc.setLocalDescription(answer)
 
     return web.Response(

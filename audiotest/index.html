@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PC Audio Stream</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; padding-top: 50px; background: #f0f0f0; }
+        button { padding: 15px 30px; font-size: 18px; cursor: pointer; border-radius: 5px; background: #007bff; color: white; border: none; }
+    </style>
+</head>
+<body>
+
+    <h2>PC System Audio Receiver</h2>
+    <!-- Mobile browsers require user interaction (click) to play audio -->
+    <button id="startBtn">Connect & Listen</button>
+    <audio id="remoteAudio" autoplay controls></audio>
+
+    <script>
+        const pc = new RTCPeerConnection();
+
+        // When the PC audio track arrives, route it to the HTML audio player
+        pc.ontrack = (event) => {
+            if (event.track.kind === 'audio') {
+                document.getElementById('remoteAudio').srcObject = event.streams[0];
+            }
+        };
+
+        async function startStream() {
+            // Request an audio-only channel from the PC
+            pc.addTransceiver('audio', { direction: 'recvonly' });
+
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+
+            // Send handshake token (SDP Offer) to Python backend
+            const response = await fetch('/offer', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sdp: pc.localDescription.sdp, type: pc.localDescription.type })
+            });
+
+            const answer = await response.json();
+            await pc.setRemoteDescription(new RTCSessionDescription(answer));
+        }
+
+        document.getElementById('startBtn').addEventListener('click', () => {
+            startStream();
+            document.getElementById('startBtn').innerText = "Streaming...";
+        });
+    </script>
+</body>
+</html>

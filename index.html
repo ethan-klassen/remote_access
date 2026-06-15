@@ -1,91 +1,265 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Mobile Remote Receiver</title>
-    <style>
-        body, html { margin: 0; padding: 0; overflow: hidden; background: #111; width: 100%; height: 100%; user-select: none; }
-        video { 
-            width: 100%; 
-            height: 100%; 
-            object-fit: contain; 
-            background: #000; 
-            display: block; 
-            -webkit-transform: translateZ(0); 
-            transform: translateZ(0);
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport"
+      content="width=device-width,
+               initial-scale=1.0,
+               maximum-scale=1.0,
+               user-scalable=no">
+
+<title>Remote PC</title>
+
+<style>
+html, body {
+    margin:0;
+    padding:0;
+    width:100%;
+    height:100%;
+    overflow:hidden;
+    background:black;
+}
+
+video {
+    width:100%;
+    height:100%;
+    object-fit:contain;
+    display:block;
+}
+
+audio {
+    display:none;
+}
+</style>
+
 </head>
 <body>
 
-    <video id="remoteVideo" autoplay playsinline muted></video>
+<video
+    id="remoteVideo"
+    autoplay
+    playsinline
+    muted>
+</video>
 
-    <script>
-        const video = document.getElementById('remoteVideo');
-        const pc = new RTCPeerConnection({ iceServers: [] });
-        
-        pc.addTransceiver('video', { direction: 'recvonly' });
-        const dataChannel = pc.createDataChannel("inputs", { ordered: true });
+<audio
+    id="remoteAudio"
+    autoplay
+    playsinline>
+</audio>
 
-        pc.ontrack = (event) => {
-            if (event.streams && event.streams[0]) {
-                video.srcObject = event.streams[0];
-            } else {
-                const inboundStream = new MediaStream();
-                inboundStream.addTrack(event.track);
-                video.srcObject = inboundStream;
-            }
-        };
+<script>
 
-        // Restored original working touch mapping engine
-        video.addEventListener('touchmove', (e) => {
-            e.preventDefault();
-            
-            if (video.paused) {
-                video.play().catch(() => {});
-            }
+const video =
+    document.getElementById(
+        "remoteVideo"
+    );
 
-            if (!dataChannel || dataChannel.readyState !== "open") return;
+const audio =
+    document.getElementById(
+        "remoteAudio"
+    );
 
-            const touch = e.touches[0];
-            const rect = video.getBoundingClientRect();
-            
-            const relativeX = (touch.clientX - rect.left) / rect.width;
-            const relativeY = (touch.clientY - rect.top) / rect.height;
+const pc =
+    new RTCPeerConnection({
+        iceServers:[]
+    });
 
-            if (relativeX >= 0 && relativeX <= 1 && relativeY >= 0 && relativeY <= 1) {
-                dataChannel.send(JSON.stringify({
-                    type: "mousemove",
-                    x: relativeX,
-                    y: relativeY
-                }));
-            }
-        }, { passive: false });
+const dataChannel =
+    pc.createDataChannel(
+        "inputs",
+        {
+            ordered:true
+        }
+    );
 
-        video.addEventListener('touchstart', (e) => {
-            if (video.paused) {
-                video.play().catch(() => {});
-            }
-            if (dataChannel && dataChannel.readyState === "open" && e.touches.length === 1) {
-                dataChannel.send(JSON.stringify({ type: "click" }));
-            }
-        });
+pc.addTransceiver(
+    "video",
+    {
+        direction:"recvonly"
+    }
+);
 
-        async function start() {
-            const offer = await pc.createOffer();
-            await pc.setLocalDescription(offer);
+pc.addTransceiver(
+    "audio",
+    {
+        direction:"recvonly"
+    }
+);
 
-            const response = await fetch('/offer', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sdp: pc.localDescription.sdp, type: pc.localDescription.type })
-            });
+pc.ontrack = (event) => {
 
-            const answer = await response.json();
-            await pc.setRemoteDescription(new RTCSessionDescription(answer));
+    if (event.track.kind === "video") {
+
+        if (
+            event.streams &&
+            event.streams[0]
+        ) {
+            video.srcObject =
+                event.streams[0];
+        }
+        else {
+            const stream =
+                new MediaStream();
+
+            stream.addTrack(
+                event.track
+            );
+
+            video.srcObject =
+                stream;
+        }
+    }
+
+    if (event.track.kind === "audio") {
+
+        const stream =
+            new MediaStream();
+
+        stream.addTrack(
+            event.track
+        );
+
+        audio.srcObject =
+            stream;
+
+        audio.muted = false;
+        audio.volume = 1.0;
+
+        audio.play()
+             .catch(() => {});
+    }
+};
+
+video.addEventListener(
+    "touchmove",
+    (e) => {
+
+        e.preventDefault();
+
+        if (
+            !dataChannel ||
+            dataChannel.readyState !== "open"
+        ) {
+            return;
         }
 
-        start();
-    </script>
+        const touch =
+            e.touches[0];
+
+        const rect =
+            video.getBoundingClientRect();
+
+        const x =
+            (touch.clientX -
+                rect.left)
+            / rect.width;
+
+        const y =
+            (touch.clientY -
+                rect.top)
+            / rect.height;
+
+        if (
+            x >= 0 &&
+            x <= 1 &&
+            y >= 0 &&
+            y <= 1
+        ) {
+            dataChannel.send(
+                JSON.stringify({
+                    type:"mousemove",
+                    x:x,
+                    y:y
+                })
+            );
+        }
+
+    },
+    {
+        passive:false
+    }
+);
+
+video.addEventListener(
+    "touchstart",
+    () => {
+
+        if (
+            dataChannel &&
+            dataChannel.readyState ===
+                "open"
+        ) {
+            dataChannel.send(
+                JSON.stringify({
+                    type:"click"
+                })
+            );
+        }
+
+        audio.muted = false;
+        audio.volume = 1.0;
+
+        audio.play()
+             .catch(() => {});
+    }
+);
+
+async function start() {
+
+    const offer =
+        await pc.createOffer();
+
+    await pc.setLocalDescription(
+        offer
+    );
+
+    const response =
+        await fetch(
+            "/offer",
+            {
+                method:"POST",
+                headers:{
+                    "Content-Type":
+                        "application/json"
+                },
+                body:JSON.stringify({
+                    sdp:
+                        pc
+                        .localDescription
+                        .sdp,
+                    type:
+                        pc
+                        .localDescription
+                        .type
+                })
+            }
+        );
+
+    const answer =
+        await response.json();
+
+    await pc.setRemoteDescription(
+        new RTCSessionDescription(
+            answer
+        )
+    );
+}
+
+document.body.addEventListener(
+    "touchstart",
+    () => {
+        audio.play()
+             .catch(() => {});
+    },
+    {
+        once:false
+    }
+);
+
+start();
+
+</script>
+
 </body>
 </html>

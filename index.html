@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Mobile Remote Receiver</title>
+    <style>
+        body, html { margin: 0; padding: 0; overflow: hidden; background: #111; width: 100%; height: 100%; user-select: none; }
+        video { 
+            width: 100%; 
+            height: 100%; 
+            object-fit: contain; 
+            background: #000; 
+            display: block; 
+            -webkit-transform: translateZ(0); 
+            transform: translateZ(0);
+        }
+    </style>
+</head>
+<body>
+
+    <video id="remoteVideo" autoplay playsinline muted></video>
+
+    <script>
+        const video = document.getElementById('remoteVideo');
+        const pc = new RTCPeerConnection({ iceServers: [] });
+        
+        pc.addTransceiver('video', { direction: 'recvonly' });
+        const dataChannel = pc.createDataChannel("inputs", { ordered: true });
+
+        pc.ontrack = (event) => {
+            if (event.streams && event.streams[0]) {
+                video.srcObject = event.streams[0];
+            } else {
+                const inboundStream = new MediaStream();
+                inboundStream.addTrack(event.track);
+                video.srcObject = inboundStream;
+            }
+        };
+
+        // Restored original working touch mapping engine
+        video.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            
+            if (video.paused) {
+                video.play().catch(() => {});
+            }
+
+            if (!dataChannel || dataChannel.readyState !== "open") return;
+
+            const touch = e.touches[0];
+            const rect = video.getBoundingClientRect();
+            
+            const relativeX = (touch.clientX - rect.left) / rect.width;
+            const relativeY = (touch.clientY - rect.top) / rect.height;
+
+            if (relativeX >= 0 && relativeX <= 1 && relativeY >= 0 && relativeY <= 1) {
+                dataChannel.send(JSON.stringify({
+                    type: "mousemove",
+                    x: relativeX,
+                    y: relativeY
+                }));
+            }
+        }, { passive: false });
+
+        video.addEventListener('touchstart', (e) => {
+            if (video.paused) {
+                video.play().catch(() => {});
+            }
+            if (dataChannel && dataChannel.readyState === "open" && e.touches.length === 1) {
+                dataChannel.send(JSON.stringify({ type: "click" }));
+            }
+        });
+
+        async function start() {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+
+            const response = await fetch('/offer', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sdp: pc.localDescription.sdp, type: pc.localDescription.type })
+            });
+
+            const answer = await response.json();
+            await pc.setRemoteDescription(new RTCSessionDescription(answer));
+        }
+
+        start();
+    </script>
+</body>
+</html>

@@ -15,13 +15,14 @@ from aiortc.rtcrtpsender import RTCRtpSender
 
 import av
 import mss
-import pyautogui
+
+# Import pynput for zero-latency mouse injection
+from pynput.mouse import Controller, Button
+mouse = Controller()
 
 # Higher VP8 bitrate
 import aiortc.codecs.vpx
 aiortc.codecs.vpx.DEFAULT_BITRATE = 6000000
-
-pyautogui.PAUSE = 0
 
 # System audio source
 player = MediaPlayer(
@@ -136,27 +137,32 @@ async def offer(request):
         def on_message(message):
             try:
                 data = json.loads(message)
+                monitor = video_track.monitor
+
+                # Calculate screen target positions (Absolute)
+                if "x" in data and "y" in data:
+                    target_x = int(data["x"] * monitor["width"]) + monitor["left"]
+                    target_y = int(data["y"] * monitor["height"]) + monitor["top"]
 
                 if data["type"] == "mousemove":
-                    monitor = video_track.monitor
+                    mouse.position = (target_x, target_y)
 
-                    x = int(
-                        data["x"] *
-                        monitor["width"]
-                    ) + monitor["left"]
+                elif data["type"] == "mousestart":
+                    mouse.position = (target_x, target_y)
+                    # Maps 0 to Left, 1 to Right, 2 to Middle
+                    btn = [Button.left, Button.right, Button.middle][data["button"]]
+                    mouse.press(btn)
 
-                    y = int(
-                        data["y"] *
-                        monitor["height"]
-                    ) + monitor["top"]
+                elif data["type"] == "mouseend":
+                    btn = [Button.left, Button.right, Button.middle][data["button"]]
+                    mouse.release(btn)
 
-                    pyautogui.moveTo(x, y)
-
-                elif data["type"] == "click":
-                    pyautogui.click()
+                elif data["type"] == "scroll":
+                    # pynput scroll uses relative directional integers (dx, dy)
+                    mouse.scroll(0, int(data["steps"]))
 
             except Exception as e:
-                print(e)
+                print("Input error:", e)
 
     @pc.on("connectionstatechange")
     async def on_connectionstatechange():
@@ -194,6 +200,7 @@ app.router.add_get("/", index)
 app.router.add_post("/offer", offer)
 
 if __name__ == "__main__":
+    # Ensure pip install pynput mss aiortc aiohttp av is run
     web.run_app(
         app,
         host="0.0.0.0",

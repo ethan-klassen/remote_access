@@ -18,6 +18,8 @@ html, body {
     height:100%;
     overflow:hidden;
     background:black;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
 video {
@@ -50,216 +52,153 @@ audio {
 
 <script>
 
-const video =
-    document.getElementById(
-        "remoteVideo"
-    );
+const video = document.getElementById("remoteVideo");
+const audio = document.getElementById("remoteAudio");
 
-const audio =
-    document.getElementById(
-        "remoteAudio"
-    );
+const pc = new RTCPeerConnection({ iceServers:[] });
+const dataChannel = pc.createDataChannel("inputs", { ordered:true });
 
-const pc =
-    new RTCPeerConnection({
-        iceServers:[]
-    });
-
-const dataChannel =
-    pc.createDataChannel(
-        "inputs",
-        {
-            ordered:true
-        }
-    );
-
-pc.addTransceiver(
-    "video",
-    {
-        direction:"recvonly"
-    }
-);
-
-pc.addTransceiver(
-    "audio",
-    {
-        direction:"recvonly"
-    }
-);
+pc.addTransceiver("video", { direction:"recvonly" });
+pc.addTransceiver("audio", { direction:"recvonly" });
 
 pc.ontrack = (event) => {
-
     if (event.track.kind === "video") {
-
-        if (
-            event.streams &&
-            event.streams[0]
-        ) {
-            video.srcObject =
-                event.streams[0];
-        }
-        else {
-            const stream =
-                new MediaStream();
-
-            stream.addTrack(
-                event.track
-            );
-
-            video.srcObject =
-                stream;
+        if (event.streams && event.streams[0]) {
+            video.srcObject = event.streams[0];
+        } else {
+            const stream = new MediaStream();
+            stream.addTrack(event.track);
+            video.srcObject = stream;
         }
     }
-
     if (event.track.kind === "audio") {
-
-        const stream =
-            new MediaStream();
-
-        stream.addTrack(
-            event.track
-        );
-
-        audio.srcObject =
-            stream;
-
+        const stream = new MediaStream();
+        stream.addTrack(event.track);
+        audio.srcObject = stream;
         audio.muted = false;
         audio.volume = 1.0;
-
-        audio.play()
-             .catch(() => {});
+        audio.play().catch(() => {});
     }
 };
 
-video.addEventListener(
-    "touchmove",
-    (e) => {
+// State tracking variables for complex multi-touch gestures
+let activeMode = "none"; // Options: "none", "drag1", "scroll2", "drag3"
+let lastX = 0, lastY = 0;
+let initialTouchY2 = 0; 
+let tapDetected = false;
 
-        e.preventDefault();
-
-        if (
-            !dataChannel ||
-            dataChannel.readyState !== "open"
-        ) {
-            return;
-        }
-
-        const touch =
-            e.touches[0];
-
-        const rect =
-            video.getBoundingClientRect();
-
-        const x =
-            (touch.clientX -
-                rect.left)
-            / rect.width;
-
-        const y =
-            (touch.clientY -
-                rect.top)
-            / rect.height;
-
-        if (
-            x >= 0 &&
-            x <= 1 &&
-            y >= 0 &&
-            y <= 1
-        ) {
-            dataChannel.send(
-                JSON.stringify({
-                    type:"mousemove",
-                    x:x,
-                    y:y
-                })
-            );
-        }
-
-    },
-    {
-        passive:false
-    }
-);
-
-video.addEventListener(
-    "touchstart",
-    () => {
-
-        if (
-            dataChannel &&
-            dataChannel.readyState ===
-                "open"
-        ) {
-            dataChannel.send(
-                JSON.stringify({
-                    type:"click"
-                })
-            );
-        }
-
-        audio.muted = false;
-        audio.volume = 1.0;
-
-        audio.play()
-             .catch(() => {});
-    }
-);
-
-async function start() {
-
-    const offer =
-        await pc.createOffer();
-
-    await pc.setLocalDescription(
-        offer
-    );
-
-    const response =
-        await fetch(
-            "/offer",
-            {
-                method:"POST",
-                headers:{
-                    "Content-Type":
-                        "application/json"
-                },
-                body:JSON.stringify({
-                    sdp:
-                        pc
-                        .localDescription
-                        .sdp,
-                    type:
-                        pc
-                        .localDescription
-                        .type
-                })
-            }
-        );
-
-    const answer =
-        await response.json();
-
-    await pc.setRemoteDescription(
-        new RTCSessionDescription(
-            answer
-        )
-    );
+// Helper to convert screen coordinates to percentages (0.0 to 1.0)
+function getNormalizedCoords(touch) {
+    const rect = video.getBoundingClientRect();
+    let x = (touch.clientX - rect.left) / rect.width;
+    let y = (touch.clientY - rect.top) / rect.height;
+    return {
+        x: Math.max(0, Math.min(1, x)),
+        y: Math.max(0, Math.min(1, y))
+    };
 }
 
-document.body.addEventListener(
-    "touchstart",
-    () => {
-        audio.play()
-             .catch(() => {});
-    },
-    {
-        once:false
+function sendInput(payload) {
+    if (dataChannel && dataChannel.readyState === "open") {
+        dataChannel.send(JSON.stringify(payload));
     }
-);
+}
+
+video.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    
+    // Audio trigger initialization
+    audio.muted = false;
+    audio.volume = 1.0;
+    audio.play().catch(() => {});
+
+    const count = e.touches.length;
+
+    if (count === 1) {
+        activeMode = "drag1";
+        tapDetected = true;
+        const coords = getNormalizedCoords(e.touches[0]);
+        lastX = coords.x;
+        lastY = coords.y;
+        
+        sendInput({ type: "mousestart", button: 0, x: coords.x, y: coords.y });
+    } 
+    else if (count === 2) {
+        activeMode = "scroll2";
+        tapDetected = false;
+        // Release left mouse immediately to prevent misclicks while adding finger
+        sendInput({ type: "mouseend", button: 0 });
+        initialTouchY2 = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    } 
+    else if (count === 3) {
+        activeMode = "drag3";
+        tapDetected = false;
+        sendInput({ type: "mouseend", button: 0 });
+        
+        // Track the center coordinates of the 3-finger cluster
+        const coords = getNormalizedCoords(e.touches[0]);
+        lastX = coords.x;
+        lastY = coords.y;
+        
+        // Lock Middle Mouse Down for Sims 3D Camera tracking 
+        sendInput({ type: "mousestart", button: 2, x: coords.x, y: coords.y });
+    }
+}, { passive: false });
+
+video.addEventListener("touchmove", (e) => {
+    e.preventDefault();
+    tapDetected = false; // Moved significantly, it is no longer a simple tap
+
+    if (activeMode === "drag1") {
+        const coords = getNormalizedCoords(e.touches[0]);
+        sendInput({ type: "mousemove", x: coords.x, y: coords.y });
+    } 
+    else if (activeMode === "scroll2" && e.touches.length >= 2) {
+        const currentY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        const deltaY = currentY - initialTouchY2;
+
+        // Dynamic sensitivity threshold for scroll wheel ticks
+        if (Math.abs(deltaY) > 25) { 
+            const steps = deltaY > 0 ? -1 : 1; 
+            sendInput({ type: "scroll", steps: steps });
+            initialTouchY2 = currentY; // Reset threshold tracking anchor
+        }
+    } 
+    else if (activeMode === "drag3" && e.touches.length >= 3) {
+        const coords = getNormalizedCoords(e.touches[0]);
+        sendInput({ type: "mousemove", x: coords.x, y: coords.y });
+    }
+}, { passive: false });
+
+video.addEventListener("touchend", (e) => {
+    e.preventDefault();
+
+    if (activeMode === "drag1") {
+        sendInput({ type: "mouseend", button: 0 });
+    } 
+    else if (activeMode === "drag3") {
+        sendInput({ type: "mouseend", button: 2 });
+    }
+
+    // Reset status flags back to base state
+    activeMode = "none";
+}, { passive: false });
+
+async function start() {
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
+    const response = await fetch("/offer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sdp: pc.localDescription.sdp, type: pc.localDescription.type })
+    });
+
+    const answer = await response.json();
+    await pc.setRemoteDescription(new RTCSessionDescription(answer));
+}
 
 start();
-
 </script>
-
 </body>
 </html>

@@ -39,7 +39,8 @@ class ScreenCaptureTrack(VideoStreamTrack):
         super().__init__()
 
         self.sct = mss.MSS()
-        raw_monitor = self.sct.monitors[1]
+        # FIX: Explicitly target the primary monitor index
+        raw_monitor = self.sct.monitors[1] 
 
         self.width = (raw_monitor["width"] // 16) * 16
         self.height = (raw_monitor["height"] // 16) * 16

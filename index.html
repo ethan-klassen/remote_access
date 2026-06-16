@@ -6,7 +6,8 @@
       content="width=device-width,
                initial-scale=1.0,
                maximum-scale=1.0,
-               user-scalable=no">
+               user-scalable=no,
+               viewport-fit=cover">
 
 <title>Remote PC</title>
 
@@ -22,6 +23,12 @@ html, body {
     -webkit-user-select: none;
 }
 
+#container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
 video {
     width:100%;
     height:100%;
@@ -32,17 +39,36 @@ video {
 audio {
     display:none;
 }
+
+#fullscreenBtn {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-family: sans-serif;
+    font-size: 14px;
+    z-index: 100;
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+}
 </style>
 
 </head>
 <body>
 
-<video
-    id="remoteVideo"
-    autoplay
-    playsinline
-    muted>
-</video>
+<div id="container">
+    <button id="fullscreenBtn">Go Fullscreen</button>
+    <video
+        id="remoteVideo"
+        autoplay
+        playsinline
+        muted>
+    </video>
+</div>
 
 <audio
     id="remoteAudio"
@@ -54,6 +80,8 @@ audio {
 
 const video = document.getElementById("remoteVideo");
 const audio = document.getElementById("remoteAudio");
+const container = document.getElementById("container");
+const fullscreenBtn = document.getElementById("fullscreenBtn");
 
 const pc = new RTCPeerConnection({ iceServers:[] });
 const dataChannel = pc.createDataChannel("inputs", { ordered:true });
@@ -81,20 +109,59 @@ pc.ontrack = (event) => {
     }
 };
 
-// State tracking variables for complex multi-touch gestures
-let activeMode = "none"; // Options: "none", "drag1", "scroll2", "drag3"
-let lastX = 0, lastY = 0;
-let initialTouchY2 = 0; 
-let tapDetected = false;
+// Fullscreen Request API Integration
+fullscreenBtn.addEventListener("click", () => {
+    if (!document.fullscreenElement) {
+        container.requestFullscreen().catch(err => {
+            console.log("Error enabling fullscreen:", err);
+        });
+        fullscreenBtn.innerText = "Exit Fullscreen";
+    } else {
+        document.exitFullscreen();
+        fullscreenBtn.innerText = "Go Fullscreen";
+    }
+});
 
-// Helper to convert screen coordinates to percentages (0.0 to 1.0)
+let activeMode = "none"; 
+let initialTouchY2 = 0; 
+
+// Letterbox Calibration Function: Computes exact inner dimensions of 16:9 frame
 function getNormalizedCoords(touch) {
     const rect = video.getBoundingClientRect();
-    let x = (touch.clientX - rect.left) / rect.width;
-    let y = (touch.clientY - rect.top) / rect.height;
+    
+    // Video aspect metadata (fallback to 16:9 standard if metadata isn't ready)
+    const videoWidth = video.videoWidth || 16;
+    const videoHeight = video.videoHeight || 9;
+    const videoRatio = videoWidth / videoHeight;
+    const containerRatio = rect.width / rect.height;
+    
+    let actualWidth = rect.width;
+    let actualHeight = rect.height;
+    let letterboxLeft = 0;
+    let letterboxTop = 0;
+    
+    // Check if black bars are on the sides or the top/bottom
+    if (containerRatio > videoRatio) {
+        // Black bars on left and right
+        actualWidth = rect.height * videoRatio;
+        letterboxLeft = (rect.width - actualWidth) / 2;
+    } else {
+        // Black bars on top and bottom
+        actualHeight = rect.width / videoRatio;
+        letterboxTop = (rect.height - actualHeight) / 2;
+    }
+    
+    // Calculate precise touch coordinates relative ONLY to the active video frame
+    let touchX = touch.clientX - rect.left - letterboxLeft;
+    let touchY = touch.clientY - rect.top - letterboxTop;
+    
+    let normX = touchX / actualWidth;
+    let normY = touchY / actualHeight;
+    
+    // Clamp values firmly between 0.0 and 1.0 to let inputs scrape absolute edges
     return {
-        x: Math.max(0, Math.min(1, x)),
-        y: Math.max(0, Math.min(1, y))
+        x: Math.max(0, Math.min(1, normX)),
+        y: Math.max(0, Math.min(1, normY))
     };
 }
 
@@ -107,7 +174,6 @@ function sendInput(payload) {
 video.addEventListener("touchstart", (e) => {
     e.preventDefault();
     
-    // Audio trigger initialization
     audio.muted = false;
     audio.volume = 1.0;
     audio.play().catch(() => {});
@@ -116,38 +182,24 @@ video.addEventListener("touchstart", (e) => {
 
     if (count === 1) {
         activeMode = "drag1";
-        tapDetected = true;
         const coords = getNormalizedCoords(e.touches[0]);
-        lastX = coords.x;
-        lastY = coords.y;
-        
         sendInput({ type: "mousestart", button: 0, x: coords.x, y: coords.y });
     } 
     else if (count === 2) {
         activeMode = "scroll2";
-        tapDetected = false;
-        // Release left mouse immediately to prevent misclicks while adding finger
         sendInput({ type: "mouseend", button: 0 });
         initialTouchY2 = (e.touches[0].clientY + e.touches[1].clientY) / 2;
     } 
     else if (count === 3) {
         activeMode = "drag3";
-        tapDetected = false;
         sendInput({ type: "mouseend", button: 0 });
-        
-        // Track the center coordinates of the 3-finger cluster
         const coords = getNormalizedCoords(e.touches[0]);
-        lastX = coords.x;
-        lastY = coords.y;
-        
-        // Lock Middle Mouse Down for Sims 3D Camera tracking 
         sendInput({ type: "mousestart", button: 2, x: coords.x, y: coords.y });
     }
 }, { passive: false });
 
 video.addEventListener("touchmove", (e) => {
     e.preventDefault();
-    tapDetected = false; // Moved significantly, it is no longer a simple tap
 
     if (activeMode === "drag1") {
         const coords = getNormalizedCoords(e.touches[0]);
@@ -157,11 +209,10 @@ video.addEventListener("touchmove", (e) => {
         const currentY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
         const deltaY = currentY - initialTouchY2;
 
-        // Dynamic sensitivity threshold for scroll wheel ticks
-        if (Math.abs(deltaY) > 25) { 
+        if (Math.abs(deltaY) > 20) { 
             const steps = deltaY > 0 ? -1 : 1; 
             sendInput({ type: "scroll", steps: steps });
-            initialTouchY2 = currentY; // Reset threshold tracking anchor
+            initialTouchY2 = currentY; 
         }
     } 
     else if (activeMode === "drag3" && e.touches.length >= 3) {
@@ -179,8 +230,6 @@ video.addEventListener("touchend", (e) => {
     else if (activeMode === "drag3") {
         sendInput({ type: "mouseend", button: 2 });
     }
-
-    // Reset status flags back to base state
     activeMode = "none";
 }, { passive: false });
 

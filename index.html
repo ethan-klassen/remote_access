@@ -167,11 +167,12 @@ const dataChannel = pc.createDataChannel("inputs", { ordered:true });
 pc.addTransceiver("video", { direction:"recvonly" });
 pc.addTransceiver("audio", { direction:"recvonly" });
 
-// YOUR PURE WORKING ONTRACK STREAM PARSER LOOPS
+// YOUR WORKING STREAM PARSER - WITH SAFE AUDIO TRACK EXTRACTION
 pc.ontrack = (event) => {
     if (event.track.kind === "video") {
-        if (event.streams && event.streams[0]) {
-            video.srcObject = event.streams[0];
+        // Keeps your exact fallback video assignment method that works well
+        if (event.streams && event.streams.length > 0) {
+            video.srcObject = event.streams.at(0);
         } else {
             const stream = new MediaStream();
             stream.addTrack(event.track);
@@ -179,12 +180,13 @@ pc.ontrack = (event) => {
         }
     }
     if (event.track.kind === "audio") {
-        const stream = new MediaStream();
-        stream.addTrack(event.track);
-        audio.srcObject = stream;
+        // FIXED AUDIO ROUTING: Maps the single audio track directly to prevent bracket stripping corruption
+        const audioStream = new MediaStream();
+        audioStream.addTrack(event.track);
+        audio.srcObject = audioStream;
         audio.muted = false;
         audio.volume = 1.0;
-        audio.play().catch(() => {});
+        audio.play().catch(e => console.log("Audio waiting for touch event:", e));
     }
 };
 
@@ -242,28 +244,35 @@ let initialTouchY2 = 0;
 
 video.addEventListener("touchstart", (e) => {
     e.preventDefault();
+    
+    // FIXED USER INTERACTION ANCHOR: Unlocks the hardware audio driver on your first tap
+    if (audio.srcObject) {
+        audio.muted = false;
+        audio.play().catch(() => {});
+    }
+
     const count = e.touches.length;
 
     if (count === 1) {
         activeMode = "drag1";
-        const coords = getNormalizedCoords(e.touches[0]);
+        const coords = getNormalizedCoords(e.touches.item(0));
         sendInput({ type: "mousestart", button: 0, x: coords.x, y: coords.y });
     } 
     else if (count === 2) {
         activeMode = "scroll2";
         sendInput({ type: "mouseend", button: 0 });
-        initialTouchY2 = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        initialTouchY2 = (e.touches.item(0).clientY + e.touches.item(1).clientY) / 2;
     }
 }, { passive: false });
 
 video.addEventListener("touchmove", (e) => {
     e.preventDefault();
     if (activeMode === "drag1") {
-        const coords = getNormalizedCoords(e.touches[0]);
+        const coords = getNormalizedCoords(e.touches.item(0));
         sendInput({ type: "mousemove", x: coords.x, y: coords.y });
     } 
     else if (activeMode === "scroll2" && e.touches.length >= 2) {
-        const currentY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        const currentY = (e.touches.item(0).clientY + e.touches.item(1).clientY) / 2;
         const deltaY = currentY - initialTouchY2;
         if (Math.abs(deltaY) > 20) { 
             const steps = deltaY > 0 ? -1 : 1; 
@@ -286,6 +295,10 @@ document.querySelectorAll(".game-btn[data-key]").forEach(btn => {
     btn.addEventListener("touchstart", (e) => {
         e.preventDefault();
         e.stopPropagation(); 
+        
+        // Secondary audio device unlock trigger
+        if (audio.srcObject) audio.play().catch(() => {});
+
         sendInput({ type: "btnstart", key: btn.getAttribute("data-key") });
     });
     btn.addEventListener("touchend", (e) => {

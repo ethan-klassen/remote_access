@@ -44,16 +44,16 @@ audio {
     position: absolute;
     top: 15px;
     right: 15px;
-    background: rgba(255, 255, 255, 0.2);
-    color: white;
-    border: 1px solid rgba(255, 255, 255, 0.4);
+    background: rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.2);
     padding: 8px 14px;
     border-radius: 6px;
     font-family: sans-serif;
     font-size: 14px;
     z-index: 100;
-    backdrop-filter: blur(5px);
-    -webkit-backdrop-filter: blur(5px);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
 }
 
 /* Side Control Panels Overlay Layout */
@@ -75,12 +75,13 @@ audio {
     justify-content: center;
 }
 
+/* FIXED VISIBILITY STYLING: Shifted values to be much more translucent */
 .game-btn {
     width: 55px;
     height: 55px;
-    background: rgba(0, 0, 0, 0.6);
-    color: white;
-    border: 2px solid rgba(255, 255, 255, 0.4);
+    background: rgba(0, 0, 0, 0.25);
+    color: rgba(255, 255, 255, 0.5);
+    border: 2px solid rgba(255, 255, 255, 0.2);
     border-radius: 12px;
     font-family: sans-serif;
     font-size: 14px;
@@ -88,13 +89,15 @@ audio {
     display: flex;
     align-items: center;
     justify-content: center;
-    backdrop-filter: blur(5px);
-    -webkit-backdrop-filter: blur(5px);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
 }
 
+/* Highly visible active feedback glow when clicked */
 .game-btn:active {
     background: rgba(0, 255, 200, 0.4);
     border-color: #00ffcc;
+    color: #ffffff;
 }
 
 #keyboardInput {
@@ -167,10 +170,8 @@ const dataChannel = pc.createDataChannel("inputs", { ordered:true });
 pc.addTransceiver("video", { direction:"recvonly" });
 pc.addTransceiver("audio", { direction:"recvonly" });
 
-// YOUR WORKING STREAM PARSER - WITH SAFE AUDIO TRACK EXTRACTION
 pc.ontrack = (event) => {
     if (event.track.kind === "video") {
-        // Keeps your exact fallback video assignment method that works well
         if (event.streams && event.streams.length > 0) {
             video.srcObject = event.streams.at(0);
         } else {
@@ -180,7 +181,6 @@ pc.ontrack = (event) => {
         }
     }
     if (event.track.kind === "audio") {
-        // FIXED AUDIO ROUTING: Maps the single audio track directly to prevent bracket stripping corruption
         const audioStream = new MediaStream();
         audioStream.addTrack(event.track);
         audio.srcObject = audioStream;
@@ -245,7 +245,6 @@ let initialTouchY2 = 0;
 video.addEventListener("touchstart", (e) => {
     e.preventDefault();
     
-    // FIXED USER INTERACTION ANCHOR: Unlocks the hardware audio driver on your first tap
     if (audio.srcObject) {
         audio.muted = false;
         audio.play().catch(() => {});
@@ -272,7 +271,7 @@ video.addEventListener("touchmove", (e) => {
         sendInput({ type: "mousemove", x: coords.x, y: coords.y });
     } 
     else if (activeMode === "scroll2" && e.touches.length >= 2) {
-        const currentY = (e.touches.item(0).clientY + e.touches.item(1).clientY) / 2;
+        const currentY = (e.touches.item(0).clientY + e.touches.item(1).騨ntY) / 2;
         const deltaY = currentY - initialTouchY2;
         if (Math.abs(deltaY) > 20) { 
             const steps = deltaY > 0 ? -1 : 1; 
@@ -296,7 +295,6 @@ document.querySelectorAll(".game-btn[data-key]").forEach(btn => {
         e.preventDefault();
         e.stopPropagation(); 
         
-        // Secondary audio device unlock trigger
         if (audio.srcObject) audio.play().catch(() => {});
 
         sendInput({ type: "btnstart", key: btn.getAttribute("data-key") });

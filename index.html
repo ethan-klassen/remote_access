@@ -9,11 +9,6 @@
                user-scalable=no,
                viewport-fit=cover">
 
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="RemotePC">
-<link rel="manifest" href="/manifest.json">
-
 <title>Remote PC</title>
 
 <style>
@@ -45,7 +40,23 @@ audio {
     display:none;
 }
 
-/* Side Control Panels */
+#fullscreenBtn {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-family: sans-serif;
+    font-size: 14px;
+    z-index: 100;
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+}
+
+/* Side Control Panels Overlay Layout */
 .control-panel {
     position: absolute;
     bottom: 20px;
@@ -86,7 +97,6 @@ audio {
     border-color: #00ffcc;
 }
 
-/* Hidden text input helper for mobile keyboard invocation */
 #keyboardInput {
     position: absolute;
     top: -100px;
@@ -100,10 +110,10 @@ audio {
 <body>
 
 <div id="container">
-    <!-- Hidden input to trigger native iOS keyboard safely -->
     <input type="text" id="keyboardInput" autocomplete="off" autocapitalize="off">
+    <button id="fullscreenBtn">Go Fullscreen</button>
 
-    <!-- Left Panel: Camera Translation (Arrow Keys) -->
+    <!-- Left Panel: Camera Movement Control Keys -->
     <div id="leftPanel" class="control-panel">
         <div class="btn-row">
             <button class="game-btn" data-key="up">▲</button>
@@ -115,7 +125,7 @@ audio {
         </div>
     </div>
 
-    <!-- Right Panel: Camera Modification (Rotations, Zoom, Keyboard) -->
+    <!-- Right Panel: Camera Modification (Rotations, Zooms, Keyboard Toggle) -->
     <div id="rightPanel" class="control-panel">
         <div class="btn-row">
             <button class="game-btn" data-key="zoomin">Z +</button>
@@ -128,14 +138,26 @@ audio {
         </div>
     </div>
 
-    <video id="remoteVideo" autoplay playsinline muted></video>
+    <video
+        id="remoteVideo"
+        autoplay
+        playsinline
+        muted>
+    </video>
 </div>
 
-<audio id="remoteAudio" autoplay playsinline></audio>
+<audio
+    id="remoteAudio"
+    autoplay
+    playsinline>
+</audio>
 
 <script>
+
 const video = document.getElementById("remoteVideo");
 const audio = document.getElementById("remoteAudio");
+const container = document.getElementById("container");
+const fullscreenBtn = document.getElementById("fullscreenBtn");
 const kbToggleBtn = document.getElementById("kbToggleBtn");
 const keyboardInput = document.getElementById("keyboardInput");
 
@@ -145,6 +167,7 @@ const dataChannel = pc.createDataChannel("inputs", { ordered:true });
 pc.addTransceiver("video", { direction:"recvonly" });
 pc.addTransceiver("audio", { direction:"recvonly" });
 
+// YOUR PURE WORKING ONTRACK STREAM PARSER LOOPS
 pc.ontrack = (event) => {
     if (event.track.kind === "video") {
         if (event.streams && event.streams[0]) {
@@ -155,9 +178,30 @@ pc.ontrack = (event) => {
             video.srcObject = stream;
         }
     }
+    if (event.track.kind === "audio") {
+        const stream = new MediaStream();
+        stream.addTrack(event.track);
+        audio.srcObject = stream;
+        audio.muted = false;
+        audio.volume = 1.0;
+        audio.play().catch(() => {});
+    }
 };
 
-// Precise Screen Mapping
+// Fullscreen Request API Integration
+fullscreenBtn.addEventListener("click", () => {
+    if (!document.fullscreenElement) {
+        container.requestFullscreen().catch(err => {
+            console.log("Error enabling fullscreen:", err);
+        });
+        fullscreenBtn.innerText = "Exit Fullscreen";
+    } else {
+        document.exitFullscreen();
+        fullscreenBtn.innerText = "Go Fullscreen";
+    }
+});
+
+// Accurate Screen coordinate normalization math
 function getNormalizedCoords(touch) {
     const rect = video.getBoundingClientRect();
     const videoWidth = video.videoWidth || 16;
@@ -193,9 +237,8 @@ function sendInput(payload) {
     }
 }
 
-// Global Touch Engine Rules
-let activeMode = "none";
-let initialTouchY2 = 0;
+let activeMode = "none"; 
+let initialTouchY2 = 0; 
 
 video.addEventListener("touchstart", (e) => {
     e.preventDefault();
@@ -223,7 +266,8 @@ video.addEventListener("touchmove", (e) => {
         const currentY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
         const deltaY = currentY - initialTouchY2;
         if (Math.abs(deltaY) > 20) { 
-            sendInput({ type: "scroll", steps: deltaY > 0 ? -1 : 1 });
+            const steps = deltaY > 0 ? -1 : 1; 
+            sendInput({ type: "scroll", steps: steps });
             initialTouchY2 = currentY; 
         }
     }
@@ -231,16 +275,17 @@ video.addEventListener("touchmove", (e) => {
 
 video.addEventListener("touchend", (e) => {
     e.preventDefault();
-    if (activeMode === "drag1") sendInput({ type: "mouseend", button: 0 });
+    if (activeMode === "drag1") {
+        sendInput({ type: "mouseend", button: 0 });
+    }
     activeMode = "none";
 }, { passive: false });
 
-
-// Native Button Handlers
+// Control Panel Button Listeners
 document.querySelectorAll(".game-btn[data-key]").forEach(btn => {
     btn.addEventListener("touchstart", (e) => {
         e.preventDefault();
-        e.stopPropagation(); // Stops inputs from passing down to screen clicking
+        e.stopPropagation(); 
         sendInput({ type: "btnstart", key: btn.getAttribute("data-key") });
     });
     btn.addEventListener("touchend", (e) => {
@@ -250,7 +295,7 @@ document.querySelectorAll(".game-btn[data-key]").forEach(btn => {
     });
 });
 
-// Keyboard Engine Trigger
+// Focus Mobile keyboard
 kbToggleBtn.addEventListener("touchstart", (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -258,26 +303,28 @@ kbToggleBtn.addEventListener("touchstart", (e) => {
 });
 
 keyboardInput.addEventListener("input", (e) => {
-    // Intercept character data type additions instantly
     if (e.data) {
         sendInput({ type: "keyboard", text: e.data });
     } else if (e.inputType === "deleteContentBackward") {
         sendInput({ type: "keyboard", text: "backspace" });
     }
-    keyboardInput.value = ""; // Clear text field dynamically
+    keyboardInput.value = ""; 
 });
 
 async function start() {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
+
     const response = await fetch("/offer", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sdp: pc.localDescription.sdp, type: pc.localDescription.type })
     });
+
     const answer = await response.json();
     await pc.setRemoteDescription(new RTCSessionDescription(answer));
 }
+
 start();
 </script>
 </body>

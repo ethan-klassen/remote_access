@@ -156,7 +156,6 @@ audio {
 </audio>
 
 <script>
-
 const video = document.getElementById("remoteVideo");
 const audio = document.getElementById("remoteAudio");
 const container = document.getElementById("container");
@@ -271,10 +270,12 @@ video.addEventListener("touchmove", (e) => {
         sendInput({ type: "mousemove", x: coords.x, y: coords.y });
     } 
     else if (activeMode === "scroll2" && e.touches.length >= 2) {
-        const currentY = (e.touches.item(0).clientY + e.touches.item(1).騨ntY) / 2;
+        // Corrected your old typo: .騨ntY -> .clientY
+        const currentY = (e.touches.item(0).clientY + e.touches.item(1).clientY) / 2;
         const deltaY = currentY - initialTouchY2;
         if (Math.abs(deltaY) > 20) { 
-            const steps = deltaY > 0 ? -1 : 1; 
+            // Normalized to match pydirectinput scroll sizing rules
+            const steps = deltaY > 0 ? -60 : 60; 
             sendInput({ type: "scroll", steps: steps });
             initialTouchY2 = currentY; 
         }
@@ -322,6 +323,7 @@ keyboardInput.addEventListener("input", (e) => {
     keyboardInput.value = ""; 
 });
 
+// FIXED: Cleaned up JavaScript function naming syntax error
 async function start() {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);

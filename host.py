@@ -28,6 +28,16 @@ keyboard = KeyController()
 import aiortc.codecs.vpx
 aiortc.codecs.vpx.DEFAULT_BITRATE = 6000000
 
+aiortc.codecs.vpx.MAX_BITRATE = 10000000      # 10 Mbps allowance
+
+# 2. Target the modern PyAV VpxEncoder class wrapper
+# 'deadline' and 'cpu-used' are passed to FFmpeg/libvpx options dictionary
+aiortc.codecs.vpx.Vp8Encoder.options = {
+    "deadline": "realtime",
+    "cpu-used": "5",        # Values 4-6 trade minimal compression for massive CPU drops
+    "tune": "zerolatency"   # Tells the encoder to instantly emit frames without lookahead
+}
+
 # Native Windows API Structural Layouts for SendInput
 INPUT_MOUSE = 0
 MOUSEEVENTF_MOVE = 0x0001
@@ -118,33 +128,37 @@ class ScreenCaptureTrack(VideoStreamTrack):
         frame_bytes = bytearray(img.bgra)
         
         try:
-            # Query exactly where the cursor is right now inside Windows desktop space
+            # Query cursor
             mx, my = get_windows_cursor_position()
             rx = mx - self.monitor["left"]
             ry = my - self.monitor["top"]
             
-            # Render a 7x7 bright cyan custom square cursor overlay right onto the raw array buffer
-            # This completely bypasses Windows hiding its native hardware cursor over streaming pipelines!
-            for dy in range(-3, 4):
-                for dx in range(-3, 4):
-                    cx, cy = rx + dx, ry + dy
-                    if 0 <= cx < self.width and 0 <= cy < self.height:
-                        idx = (cy * self.width + cx) * 4
-                        frame_bytes[idx] = 255     # B
-                        frame_bytes[idx+1] = 255   # G
-                        frame_bytes[idx+2] = 0     # R
-                        frame_bytes[idx+3] = 255   # A
+            # Fast bounded box draw without nested loops
+            if 3 <= rx < self.width - 3 and 3 <= ry < self.height - 3:
+                # Pre-calculate a cyan row slice (7 pixels wide = 28 bytes in BGRA)
+                # Cyan is B=255, G=255, R=0, A=255
+                cyan_row = bytearray([255, 255, 0, 255] * 7)
+                
+                # Directly slice rows into the bytearray memory buffer
+                for dy in range(-3, 4):
+                    row_start = ((ry + dy) * self.width + (rx - 3)) * 4
+                    frame_bytes[row_start : row_start + 28] = cyan_row
         except Exception:
             pass
 
         bgra_frame = av.VideoFrame(self.width, self.height, format="bgra")
         bgra_frame.planes[0].update(frame_bytes)
         
-        frame = bgra_frame.reformat(
-            width=self.width,
-            height=self.height,
-            format="yuv420p",
-            interpolation="FAST_BILINEAR"
+        # Offload the CPU-heavy format translation to an external worker thread
+        loop = asyncio.get_event_loop()
+        frame = await loop.run_in_executor(
+            None, 
+            lambda: bgra_frame.reformat(
+                width=self.width,
+                height=self.height,
+                format="yuv420p",
+                interpolation="FAST_BILINEAR"
+            )
         )
 
         frame.pts = pts
@@ -152,7 +166,8 @@ class ScreenCaptureTrack(VideoStreamTrack):
 
         process_time = time.time() - start_loop
         sleep_duration = max(0, (1 / 30) - process_time)
-        # Optimized context yielding prevents stream freezing under input load
+        
+        # Keep this slight cushion sleep so the encoder thread can breathe
         await asyncio.sleep(sleep_duration if sleep_duration > 0 else 0.001)
 
         return frame

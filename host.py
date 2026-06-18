@@ -22,11 +22,9 @@ import pydirectinput
 pydirectinput.PAUSE = 0.0
 pydirectinput.FAILSAFE = False
 
-# Keep pynput ONLY for complex keyboard text strings
 from pynput.keyboard import Controller as KeyController, Key
 keyboard = KeyController()
 
-# Set high VP8 encoding bitrate
 import aiortc.codecs.vpx
 aiortc.codecs.vpx.DEFAULT_BITRATE = 6000000
 
@@ -42,6 +40,10 @@ MOUSEEVENTF_RIGHTUP = 0x0010
 MOUSEEVENTF_MIDDLEDOWN = 0x0020
 MOUSEEVENTF_MIDDLEUP = 0x0040
 MOUSEEVENTF_WHEEL = 0x0800
+
+# Win32 Point structure for tracking the real hardware cursor location
+class POINT(ctypes.Structure):
+    _fields_ = [("x", wintypes.LONG), ("y", wintypes.LONG)]
 
 class MOUSEINPUT(ctypes.Structure):
     _fields_ = [
@@ -63,10 +65,6 @@ class INPUT(ctypes.Structure):
     ]
 
 def send_hardware_input(flags, x=0, y=0, data=0):
-    """
-    Utilizes the advanced SendInput API to inject coordinated movement
-    and click instructions perfectly synchronized within a single frame.
-    """
     extra = ctypes.c_void_p(0)
     mi = MOUSEINPUT(x, y, data, flags, 0, extra)
     u = INPUT_UNION(mi=mi)
@@ -77,25 +75,23 @@ def native_win32_scroll(clicks):
     wheel_delta = clicks * 120
     send_hardware_input(MOUSEEVENTF_WHEEL, 0, 0, wheel_delta)
 
+def get_windows_cursor_position():
+    """Queries the OS directly for where the system cursor currently resides."""
+    pt = POINT()
+    ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
+    return pt.x, pt.y
+
 # System audio capture
 player = MediaPlayer(
     "audio=CABLE Output (VB-Audio Virtual Cable)",
     format="dshow",
-    options={
-        "audio_buffer_size": "20"
-    }
+    options={"audio_buffer_size": "20"}
 )
-
-# FIXED SERVER-SIDE STATE: Global state memory tracking to cache active positioning coordinates
-last_known_win32_x = 32767 # Default center display initialization values (65535 / 2)
-last_known_win32_y = 32767
 
 class ScreenCaptureTrack(VideoStreamTrack):
     def __init__(self):
         super().__init__()
         self.sct = mss.MSS()
-        
-        # Explicit primary monitor mapping index restored
         raw_monitor = self.sct.monitors[1] 
 
         self.width = (raw_monitor["width"] // 16) * 16
@@ -112,14 +108,37 @@ class ScreenCaptureTrack(VideoStreamTrack):
 
     async def recv(self):
         start_loop = time.time()
-        
         elapsed = time.time() - self.start_time
         pts = int(elapsed * 90000)
 
+        # Grab the hardware monitor frame buffer
         img = self.sct.grab(self.monitor)
+        
+        # Convert raw frame to mutable byte array to inject our hardware cursor
+        frame_bytes = bytearray(img.bgra)
+        
+        try:
+            # Query exactly where the cursor is right now inside Windows desktop space
+            mx, my = get_windows_cursor_position()
+            rx = mx - self.monitor["left"]
+            ry = my - self.monitor["top"]
+            
+            # Render a 7x7 bright cyan custom square cursor overlay right onto the raw array buffer
+            # This completely bypasses Windows hiding its native hardware cursor over streaming pipelines!
+            for dy in range(-3, 4):
+                for dx in range(-3, 4):
+                    cx, cy = rx + dx, ry + dy
+                    if 0 <= cx < self.width and 0 <= cy < self.height:
+                        idx = (cy * self.width + cx) * 4
+                        frame_bytes[idx] = 255     # B
+                        frame_bytes[idx+1] = 255   # G
+                        frame_bytes[idx+2] = 0     # R
+                        frame_bytes[idx+3] = 255   # A
+        except Exception:
+            pass
 
         bgra_frame = av.VideoFrame(self.width, self.height, format="bgra")
-        bgra_frame.planes[0].update(img.bgra)
+        bgra_frame.planes[0].update(frame_bytes)
         
         frame = bgra_frame.reformat(
             width=self.width,
@@ -133,7 +152,8 @@ class ScreenCaptureTrack(VideoStreamTrack):
 
         process_time = time.time() - start_loop
         sleep_duration = max(0, (1 / 30) - process_time)
-        await asyncio.sleep(sleep_duration)
+        # Optimized context yielding prevents stream freezing under input load
+        await asyncio.sleep(sleep_duration if sleep_duration > 0 else 0.001)
 
         return frame
 
@@ -183,37 +203,28 @@ async def offer(request):
     def on_datachannel(channel):
         @channel.on("message")
         def on_message(message):
+            # Fire and forget scheduling to ensure instant execution processing loop profiles
             asyncio.create_task(process_input_message(message, video_track.monitor))
 
     async def process_input_message(message, monitor):
-        global last_known_win32_x, last_known_win32_y
         try:
             data = json.loads(message)
 
-            # FIXED CAPTURE: If coordinates exist in current data frame payload, update global state memory
-            if "x" in data and "y" in data:
-                last_known_win32_x = int(data["x"] * 65535)
-                last_known_win32_y = int(data["y"] * 65535)
-
-            # Assign local execution coordinates directly out of our global memory cache
-            win32_x = last_known_win32_x
-            win32_y = last_known_win32_y
-
-            # Absolute virtual desktop position injection flags
-            move_flags = MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK
-
             if data["type"] == "mousemove":
-                send_hardware_input(move_flags, win32_x, win32_y)
+                dx = int(data.get("dx", 0))
+                dy = int(data.get("dy", 0))
+                if dx != 0 or dy != 0:
+                    send_hardware_input(MOUSEEVENTF_MOVE, dx, dy)
 
             elif data["type"] == "mousestart":
                 btn = data["button"]
                 down_flag = MOUSEEVENTF_LEFTDOWN if btn == 0 else (MOUSEEVENTF_RIGHTDOWN if btn == 1 else MOUSEEVENTF_MIDDLEDOWN)
-                send_hardware_input(move_flags | down_flag, win32_x, win32_y)
+                send_hardware_input(down_flag, 0, 0)
 
             elif data["type"] == "mouseend":
                 btn = data["button"]
                 up_flag = MOUSEEVENTF_LEFTUP if btn == 0 else (MOUSEEVENTF_RIGHTUP if btn == 1 else MOUSEEVENTF_MIDDLEUP)
-                send_hardware_input(move_flags | up_flag, win32_x, win32_y)
+                send_hardware_input(up_flag, 0, 0)
 
             elif data["type"] == "scroll":
                 clicks = 1 if data["steps"] > 0 else -1

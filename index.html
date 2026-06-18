@@ -75,7 +75,6 @@ audio {
     justify-content: center;
 }
 
-/* FIXED VISIBILITY STYLING: Shifted values to be much more translucent */
 .game-btn {
     width: 55px;
     height: 55px;
@@ -93,7 +92,6 @@ audio {
     -webkit-backdrop-filter: blur(2px);
 }
 
-/* Highly visible active feedback glow when clicked */
 .game-btn:active {
     background: rgba(0, 255, 200, 0.4);
     border-color: #00ffcc;
@@ -141,19 +139,10 @@ audio {
         </div>
     </div>
 
-    <video
-        id="remoteVideo"
-        autoplay
-        playsinline
-        muted>
-    </video>
+    <video id="remoteVideo" autoplay playsinline muted></video>
 </div>
 
-<audio
-    id="remoteAudio"
-    autoplay
-    playsinline>
-</audio>
+<audio id="remoteAudio" autoplay playsinline></audio>
 
 <script>
 const video = document.getElementById("remoteVideo");
@@ -202,44 +191,24 @@ fullscreenBtn.addEventListener("click", () => {
     }
 });
 
-// Accurate Screen coordinate normalization math
-function getNormalizedCoords(touch) {
-    const rect = video.getBoundingClientRect();
-    const videoWidth = video.videoWidth || 16;
-    const videoHeight = video.videoHeight || 9;
-    const videoRatio = videoWidth / videoHeight;
-    const containerRatio = rect.width / rect.height;
-    
-    let actualWidth = rect.width;
-    let actualHeight = rect.height;
-    let letterboxLeft = 0;
-    let letterboxTop = 0;
-    
-    if (containerRatio > videoRatio) {
-        actualWidth = rect.height * videoRatio;
-        letterboxLeft = (rect.width - actualWidth) / 2;
-    } else {
-        actualHeight = rect.width / videoRatio;
-        letterboxTop = (rect.height - actualHeight) / 2;
-    }
-    
-    let touchX = touch.clientX - rect.left - letterboxLeft;
-    let touchY = touch.clientY - rect.top - letterboxTop;
-    
-    return {
-        x: Math.max(0, Math.min(1, touchX / actualWidth)),
-        y: Math.max(0, Math.min(1, touchY / actualHeight))
-    };
-}
-
 function sendInput(payload) {
     if (dataChannel && dataChannel.readyState === "open") {
         dataChannel.send(JSON.stringify(payload));
     }
 }
 
-let activeMode = "none"; 
-let initialTouchY2 = 0; 
+// Trackpad Mode Gestures Execution Engine
+// Trackpad Mode Gestures Execution Engine
+let activeMode = "none";
+let lastTouchX = 0;
+let lastTouchY = 0;
+let initialTouchY2 = 0;
+
+let touchStartTime = 0;
+let hasMovedSignificantly = false;
+const TAP_TIMEOUT = 200; // Dropped to 200ms for fast click recognition
+const MOVE_THRESHOLD = 4; // Dropped to 4px to register tiny adjustments accurately
+const SENSITIVITY = 1.5;  // Trackpad acceleration speed modifier
 
 video.addEventListener("touchstart", (e) => {
     e.preventDefault();
@@ -250,32 +219,45 @@ video.addEventListener("touchstart", (e) => {
     }
 
     const count = e.touches.length;
+    touchStartTime = performance.now();
+    hasMovedSignificantly = false;
 
     if (count === 1) {
-        activeMode = "drag1";
-        const coords = getNormalizedCoords(e.touches.item(0));
-        sendInput({ type: "mousestart", button: 0, x: coords.x, y: coords.y });
+        activeMode = "trackpad";
+        lastTouchX = e.touches[0].clientX;
+        lastTouchY = e.touches[0].clientY;
     } 
     else if (count === 2) {
         activeMode = "scroll2";
-        sendInput({ type: "mouseend", button: 0 });
-        initialTouchY2 = (e.touches.item(0).clientY + e.touches.item(1).clientY) / 2;
+        initialTouchY2 = (e.touches[0].clientY + e.touches[1].clientY) / 2;
     }
 }, { passive: false });
 
 video.addEventListener("touchmove", (e) => {
     e.preventDefault();
-    if (activeMode === "drag1") {
-        const coords = getNormalizedCoords(e.touches.item(0));
-        sendInput({ type: "mousemove", x: coords.x, y: coords.y });
+
+    if (activeMode === "trackpad" && e.touches.length === 1) {
+        // Apply sensitivity scaling factors directly to relative movement offsets
+        const dx = (e.touches[0].clientX - lastTouchX) * SENSITIVITY;
+        const dy = (e.touches[0].clientY - lastTouchY) * SENSITIVITY;
+
+        if (Math.abs(dx) > MOVE_THRESHOLD || Math.abs(dy) > MOVE_THRESHOLD) {
+            hasMovedSignificantly = true;
+        }
+
+        if (dx !== 0 || dy !== 0) {
+            sendInput({ type: "mousemove", dx: Math.round(dx), dy: Math.round(dy) });
+        }
+
+        lastTouchX = e.touches[0].clientX;
+        lastTouchY = e.touches[0].clientY;
     } 
     else if (activeMode === "scroll2" && e.touches.length >= 2) {
-        // Corrected your old typo: .騨ntY -> .clientY
-        const currentY = (e.touches.item(0).clientY + e.touches.item(1).clientY) / 2;
+        const currentY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
         const deltaY = currentY - initialTouchY2;
-        if (Math.abs(deltaY) > 20) { 
-            // Normalized to match pydirectinput scroll sizing rules
-            const steps = deltaY > 0 ? -60 : 60; 
+        
+        if (Math.abs(deltaY) > 15) { // Dropped threshold to trigger scrolling with less drag effort
+            const steps = deltaY > 0 ? -1 : 1; 
             sendInput({ type: "scroll", steps: steps });
             initialTouchY2 = currentY; 
         }
@@ -284,11 +266,32 @@ video.addEventListener("touchmove", (e) => {
 
 video.addEventListener("touchend", (e) => {
     e.preventDefault();
-    if (activeMode === "drag1") {
-        sendInput({ type: "mouseend", button: 0 });
+    const touchDuration = performance.now() - touchStartTime;
+
+    if (activeMode === "trackpad") {
+        // If the finger stayed in place, register the left click instantly
+        if (!hasMovedSignificantly && touchDuration < TAP_TIMEOUT) {
+            sendInput({ type: "mousestart", button: 0 });
+            setTimeout(() => sendInput({ type: "mouseend", button: 0 }), 5);
+        }
+    } 
+    else if (activeMode === "scroll2") {
+        if (touchDuration < TAP_TIMEOUT) {
+            sendInput({ type: "mousestart", button: 1 });
+            setTimeout(() => sendInput({ type: "mouseend", button: 1 }), 5);
+        }
     }
-    activeMode = "none";
+
+    // Adaptively down-rank state maps when dropping fingers
+    if (e.touches.length === 0) {
+        activeMode = "none";
+    } else if (e.touches.length === 1) {
+        activeMode = "trackpad";
+        lastTouchX = e.touches[0].clientX;
+        lastTouchY = e.touches[0].clientY;
+    }
 }, { passive: false });
+
 
 // Control Panel Button Listeners
 document.querySelectorAll(".game-btn[data-key]").forEach(btn => {
@@ -323,7 +326,6 @@ keyboardInput.addEventListener("input", (e) => {
     keyboardInput.value = ""; 
 });
 
-// FIXED: Cleaned up JavaScript function naming syntax error
 async function start() {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);

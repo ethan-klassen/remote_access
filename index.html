@@ -44,16 +44,191 @@ audio {
     position: absolute;
     top: 15px;
     right: 15px;
-    background: rgba(255, 255, 255, 0.2);
-    color: white;
-    border: 1px solid rgba(255, 255, 255, 0.4);
+    background: rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.2);
     padding: 8px 14px;
     border-radius: 6px;
     font-family: sans-serif;
     font-size: 14px;
     z-index: 100;
-    backdrop-filter: blur(5px);
-    -webkit-backdrop-filter: blur(5px);
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+}
+
+/* Side Control Panels Overlay Layout */
+.control-panel {
+    position: absolute;
+    bottom: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 110;
+}
+
+#leftPanel { left: 20px; }
+#rightPanel { right: 20px; }
+
+#leftPanel, #rightPanel {
+    top: 50%;
+    bottom: auto;
+    transform: translateY(-50%);
+}
+
+#leftPanel {
+    left: 20px;
+    align-items: flex-start;
+}
+
+#rightPanel {
+    right: 20px;
+    align-items: flex-end;
+}
+
+#leftPanel .btn-row,
+#rightPanel .btn-row {
+    justify-content: center;
+}
+
+.btn-row {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+}
+
+.game-btn {
+    width: 55px;
+    height: 55px;
+    background: rgba(0, 0, 0, 0.25);
+    color: rgba(255, 255, 255, 0.5);
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-radius: 12px;
+    font-family: sans-serif;
+    font-size: 14px;
+    font-weight: bold;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+}
+
+.joystick {
+    position: relative;
+    width: 132px;
+    height: 132px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.0);
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    touch-action: none;
+    user-select: none;
+}
+
+.joystick::before {
+    content: "";
+    position: absolute;
+    inset: 12px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.0);
+}
+
+.joystick-stick {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 72px;
+    height: 72px;
+    margin-left: -36px;
+    margin-top: -36px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.28);
+    background: rgba(0, 0, 0, 0.45);
+    color: rgba(255, 255, 255, 0.85);
+    font-family: sans-serif;
+    font-size: 12px;
+    font-weight: bold;
+    letter-spacing: 0.04em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    transition: transform 0.04s linear;
+}
+
+.joystick-axis {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 2px;
+    height: 118px;
+    transform: translate(-50%, -50%);
+    background: linear-gradient(to bottom, transparent, rgba(255, 255, 255, 0.12), transparent);
+    pointer-events: none;
+}
+
+.joystick-axis.horizontal {
+    width: 118px;
+    height: 2px;
+}
+
+.joystick-action {
+    position: absolute;
+    width: 48px;
+    height: 32px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(0, 0, 0, 0.32);
+    color: rgba(255, 255, 255, 0.78);
+    font-family: sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+}
+
+.joystick-action:active {
+    background: rgba(0, 255, 200, 0.42);
+    border-color: #00ffcc;
+    color: #ffffff;
+}
+
+.joystick-action.left-top {
+    top: -52px;
+    left: 0;
+}
+
+.joystick-action.left-bottom {
+    bottom: -52px;
+    left: 0;
+}
+
+.joystick-action.right-top {
+    top: -52px;
+    right: 0;
+}
+
+.joystick-action.right-bottom {
+    bottom: -52px;
+    right: 0;
+}
+
+.game-btn:active {
+    background: rgba(0, 255, 200, 0.4);
+    border-color: #00ffcc;
+    color: #ffffff;
+}
+
+#keyboardInput {
+    position: absolute;
+    top: -100px;
+    left: -100px;
+    opacity: 0;
+    z-index: -1;
 }
 </style>
 
@@ -61,27 +236,46 @@ audio {
 <body>
 
 <div id="container">
+    <input type="text" id="keyboardInput" autocomplete="off" autocapitalize="off">
     <button id="fullscreenBtn">Go Fullscreen</button>
-    <video
-        id="remoteVideo"
-        autoplay
-        playsinline
-        muted>
-    </video>
+
+    <!-- Left Panel: Camera Movement Control Keys -->
+    <div id="leftPanel" class="control-panel">
+        <button class="game-btn joystick-action left-top" id="escBtn">Esc</button>
+        <div class="joystick" id="movementJoystick" data-mode="move">
+            <div class="joystick-axis"></div>
+            <div class="joystick-axis horizontal"></div>
+            <div class="joystick-stick">MOVE</div>
+        </div>
+    </div>
+
+    <!-- Right Panel: Camera Modification (Rotations, Zooms, Keyboard Toggle) -->
+    <div id="rightPanel" class="control-panel">
+        <button class="game-btn joystick-action right-top" id="kbToggleBtn">Keyb</button>
+        <div class="joystick" id="cameraJoystick" data-mode="camera">
+            <div class="joystick-axis"></div>
+            <div class="joystick-axis horizontal"></div>
+            <div class="joystick-stick">CAM</div>
+        </div>
+    </div>
+
+    <video id="remoteVideo" autoplay playsinline muted></video>
 </div>
 
-<audio
-    id="remoteAudio"
-    autoplay
-    playsinline>
-</audio>
+<audio id="remoteAudio" autoplay playsinline></audio>
 
 <script>
-
 const video = document.getElementById("remoteVideo");
 const audio = document.getElementById("remoteAudio");
 const container = document.getElementById("container");
 const fullscreenBtn = document.getElementById("fullscreenBtn");
+const kbToggleBtn = document.getElementById("kbToggleBtn");
+const keyboardInput = document.getElementById("keyboardInput");
+const escBtn = document.getElementById("escBtn");
+const movementJoystick = document.getElementById("movementJoystick");
+const cameraJoystick = document.getElementById("cameraJoystick");
+let keyboardIsOpen = false;
+let ignoreKeyboardButtonClick = false;
 
 const pc = new RTCPeerConnection({ iceServers:[] });
 const dataChannel = pc.createDataChannel("inputs", { ordered:true });
@@ -91,8 +285,8 @@ pc.addTransceiver("audio", { direction:"recvonly" });
 
 pc.ontrack = (event) => {
     if (event.track.kind === "video") {
-        if (event.streams && event.streams[0]) {
-            video.srcObject = event.streams[0];
+        if (event.streams && event.streams.length > 0) {
+            video.srcObject = event.streams.at(0);
         } else {
             const stream = new MediaStream();
             stream.addTrack(event.track);
@@ -100,12 +294,12 @@ pc.ontrack = (event) => {
         }
     }
     if (event.track.kind === "audio") {
-        const stream = new MediaStream();
-        stream.addTrack(event.track);
-        audio.srcObject = stream;
+        const audioStream = new MediaStream();
+        audioStream.addTrack(event.track);
+        audio.srcObject = audioStream;
         audio.muted = false;
         audio.volume = 1.0;
-        audio.play().catch(() => {});
+        audio.play().catch(e => console.log("Audio waiting for touch event:", e));
     }
 };
 
@@ -122,116 +316,341 @@ fullscreenBtn.addEventListener("click", () => {
     }
 });
 
-let activeMode = "none"; 
-let initialTouchY2 = 0; 
-
-// Letterbox Calibration Function: Computes exact inner dimensions of 16:9 frame
-function getNormalizedCoords(touch) {
-    const rect = video.getBoundingClientRect();
-    
-    // Video aspect metadata (fallback to 16:9 standard if metadata isn't ready)
-    const videoWidth = video.videoWidth || 16;
-    const videoHeight = video.videoHeight || 9;
-    const videoRatio = videoWidth / videoHeight;
-    const containerRatio = rect.width / rect.height;
-    
-    let actualWidth = rect.width;
-    let actualHeight = rect.height;
-    let letterboxLeft = 0;
-    let letterboxTop = 0;
-    
-    // Check if black bars are on the sides or the top/bottom
-    if (containerRatio > videoRatio) {
-        // Black bars on left and right
-        actualWidth = rect.height * videoRatio;
-        letterboxLeft = (rect.width - actualWidth) / 2;
-    } else {
-        // Black bars on top and bottom
-        actualHeight = rect.width / videoRatio;
-        letterboxTop = (rect.height - actualHeight) / 2;
-    }
-    
-    // Calculate precise touch coordinates relative ONLY to the active video frame
-    let touchX = touch.clientX - rect.left - letterboxLeft;
-    let touchY = touch.clientY - rect.top - letterboxTop;
-    
-    let normX = touchX / actualWidth;
-    let normY = touchY / actualHeight;
-    
-    // Clamp values firmly between 0.0 and 1.0 to let inputs scrape absolute edges
-    return {
-        x: Math.max(0, Math.min(1, normX)),
-        y: Math.max(0, Math.min(1, normY))
-    };
-}
-
 function sendInput(payload) {
     if (dataChannel && dataChannel.readyState === "open") {
         dataChannel.send(JSON.stringify(payload));
     }
 }
 
+function createTouchJoystick(element, options) {
+    const state = {
+        pointerId: null,
+        active: false,
+        startX: 0,
+        startY: 0,
+        offsetX: 0,
+        offsetY: 0,
+        lastMoveTime: 0,
+        horizontalKey: null,
+        verticalKey: null
+    };
+
+    const radius = 42;
+    const deadZone = 10;
+
+    function updateStick(dx, dy) {
+        const limitedX = Math.max(-radius, Math.min(radius, dx));
+        const limitedY = Math.max(-radius, Math.min(radius, dy));
+        const stick = element.querySelector(".joystick-stick");
+        if (stick) {
+            stick.style.transform = `translate(${limitedX}px, ${limitedY}px)`;
+        }
+    }
+
+    function resetStick() {
+        updateStick(0, 0);
+    }
+
+    function emitMovement(dx, dy) {
+        if (options.mode === "move") {
+            const nextHorizontal = dx > deadZone ? "right" : dx < -deadZone ? "left" : null;
+            const nextVertical = dy > deadZone ? "down" : dy < -deadZone ? "up" : null;
+
+            if (nextHorizontal !== state.horizontalKey) {
+                if (state.horizontalKey) {
+                    sendInput({ type: "btnend", key: state.horizontalKey });
+                }
+                state.horizontalKey = nextHorizontal;
+                if (state.horizontalKey) {
+                    sendInput({ type: "btnstart", key: state.horizontalKey });
+                }
+            }
+
+            if (nextVertical !== state.verticalKey) {
+                if (state.verticalKey) {
+                    sendInput({ type: "btnend", key: state.verticalKey });
+                }
+                state.verticalKey = nextVertical;
+                if (state.verticalKey) {
+                    sendInput({ type: "btnstart", key: state.verticalKey });
+                }
+            }
+            return;
+        }
+
+        const nextHorizontal = dx > deadZone ? "rotright" : dx < -deadZone ? "rotleft" : null;
+        const nextVertical = dy > deadZone ? "zoomout" : dy < -deadZone ? "zoomin" : null;
+
+        if (nextHorizontal !== state.horizontalKey) {
+            if (state.horizontalKey) {
+                sendInput({ type: "btnend", key: state.horizontalKey });
+            }
+            state.horizontalKey = nextHorizontal;
+            if (state.horizontalKey) {
+                sendInput({ type: "btnstart", key: state.horizontalKey });
+            }
+        }
+
+        if (nextVertical !== state.verticalKey) {
+            if (state.verticalKey) {
+                sendInput({ type: "btnend", key: state.verticalKey });
+            }
+            state.verticalKey = nextVertical;
+            if (state.verticalKey) {
+                sendInput({ type: "btnstart", key: state.verticalKey });
+            }
+        }
+    }
+
+    function stopActions() {
+        if (options.mode === "camera" || options.mode === "move") {
+            if (state.horizontalKey) {
+                sendInput({ type: "btnend", key: state.horizontalKey });
+            }
+            if (state.verticalKey) {
+                sendInput({ type: "btnend", key: state.verticalKey });
+            }
+        }
+        state.horizontalKey = null;
+        state.verticalKey = null;
+    }
+
+    element.addEventListener("touchstart", (e) => {
+        e.preventDefault();
+        const touch = e.changedTouches[0];
+        if (!touch) {
+            return;
+        }
+
+        state.pointerId = touch.identifier;
+        state.active = true;
+        state.startX = touch.clientX;
+        state.startY = touch.clientY;
+        state.offsetX = 0;
+        state.offsetY = 0;
+        state.lastMoveTime = 0;
+        resetStick();
+    }, { passive: false });
+
+    element.addEventListener("touchmove", (e) => {
+        if (!state.active) {
+            return;
+        }
+        e.preventDefault();
+
+        let touch = null;
+        for (const item of e.changedTouches) {
+            if (item.identifier === state.pointerId) {
+                touch = item;
+                break;
+            }
+        }
+        if (!touch) {
+            return;
+        }
+
+        state.offsetX = touch.clientX - state.startX;
+        state.offsetY = touch.clientY - state.startY;
+
+        const length = Math.hypot(state.offsetX, state.offsetY);
+        const scale = length > radius && length > 0 ? radius / length : 1;
+        const dx = state.offsetX * scale;
+        const dy = state.offsetY * scale;
+
+        updateStick(dx, dy);
+        emitMovement(state.offsetX, state.offsetY);
+    }, { passive: false });
+
+    function endTouch() {
+        if (!state.active) {
+            return;
+        }
+        state.active = false;
+        state.pointerId = null;
+        resetStick();
+        stopActions();
+    }
+
+    element.addEventListener("touchend", (e) => {
+        e.preventDefault();
+        endTouch();
+    }, { passive: false });
+
+    element.addEventListener("touchcancel", (e) => {
+        e.preventDefault();
+        endTouch();
+    }, { passive: false });
+}
+
+createTouchJoystick(movementJoystick, { mode: "move" });
+createTouchJoystick(cameraJoystick, { mode: "camera" });
+
+function toggleKeyboard() {
+    if (keyboardIsOpen || document.activeElement === keyboardInput) {
+        keyboardInput.blur();
+        keyboardIsOpen = false;
+        return;
+    }
+
+    keyboardInput.value = "";
+    keyboardInput.focus({ preventScroll: true });
+    keyboardIsOpen = true;
+}
+
+// Trackpad Mode Gestures Execution Engine
+// Trackpad Mode Gestures Execution Engine
+let activeMode = "none";
+let lastTouchX = 0;
+let lastTouchY = 0;
+let initialTouchY2 = 0;
+
+let touchStartTime = 0;
+let hasMovedSignificantly = false;
+const TAP_TIMEOUT = 200; // Dropped to 200ms for fast click recognition
+const MOVE_THRESHOLD = 4; // Dropped to 4px to register tiny adjustments accurately
+const SENSITIVITY = 1.5;  // Trackpad acceleration speed modifier
+
 video.addEventListener("touchstart", (e) => {
     e.preventDefault();
     
-    audio.muted = false;
-    audio.volume = 1.0;
-    audio.play().catch(() => {});
+    if (audio.srcObject) {
+        audio.muted = false;
+        audio.play().catch(() => {});
+    }
 
     const count = e.touches.length;
+    touchStartTime = performance.now();
+    hasMovedSignificantly = false;
 
     if (count === 1) {
-        activeMode = "drag1";
-        const coords = getNormalizedCoords(e.touches[0]);
-        sendInput({ type: "mousestart", button: 0, x: coords.x, y: coords.y });
+        activeMode = "trackpad";
+        lastTouchX = e.touches[0].clientX;
+        lastTouchY = e.touches[0].clientY;
     } 
     else if (count === 2) {
         activeMode = "scroll2";
-        sendInput({ type: "mouseend", button: 0 });
         initialTouchY2 = (e.touches[0].clientY + e.touches[1].clientY) / 2;
-    } 
-    else if (count === 3) {
-        activeMode = "drag3";
-        sendInput({ type: "mouseend", button: 0 });
-        const coords = getNormalizedCoords(e.touches[0]);
-        sendInput({ type: "mousestart", button: 2, x: coords.x, y: coords.y });
     }
 }, { passive: false });
 
 video.addEventListener("touchmove", (e) => {
     e.preventDefault();
 
-    if (activeMode === "drag1") {
-        const coords = getNormalizedCoords(e.touches[0]);
-        sendInput({ type: "mousemove", x: coords.x, y: coords.y });
+    if (activeMode === "trackpad" && e.touches.length === 1) {
+        // Apply sensitivity scaling factors directly to relative movement offsets
+        const dx = (e.touches[0].clientX - lastTouchX) * SENSITIVITY;
+        const dy = (e.touches[0].clientY - lastTouchY) * SENSITIVITY;
+
+        if (Math.abs(dx) > MOVE_THRESHOLD || Math.abs(dy) > MOVE_THRESHOLD) {
+            hasMovedSignificantly = true;
+        }
+
+        if (dx !== 0 || dy !== 0) {
+            sendInput({ type: "mousemove", dx: Math.round(dx), dy: Math.round(dy) });
+        }
+
+        lastTouchX = e.touches[0].clientX;
+        lastTouchY = e.touches[0].clientY;
     } 
     else if (activeMode === "scroll2" && e.touches.length >= 2) {
         const currentY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
         const deltaY = currentY - initialTouchY2;
-
-        if (Math.abs(deltaY) > 20) { 
+        
+        if (Math.abs(deltaY) > 15) { // Dropped threshold to trigger scrolling with less drag effort
             const steps = deltaY > 0 ? -1 : 1; 
             sendInput({ type: "scroll", steps: steps });
             initialTouchY2 = currentY; 
         }
-    } 
-    else if (activeMode === "drag3" && e.touches.length >= 3) {
-        const coords = getNormalizedCoords(e.touches[0]);
-        sendInput({ type: "mousemove", x: coords.x, y: coords.y });
     }
 }, { passive: false });
 
 video.addEventListener("touchend", (e) => {
     e.preventDefault();
+    const touchDuration = performance.now() - touchStartTime;
 
-    if (activeMode === "drag1") {
-        sendInput({ type: "mouseend", button: 0 });
+    if (activeMode === "trackpad") {
+        // If the finger stayed in place, register the left click instantly
+        if (!hasMovedSignificantly && touchDuration < TAP_TIMEOUT) {
+            sendInput({ type: "mousestart", button: 0 });
+            setTimeout(() => sendInput({ type: "mouseend", button: 0 }), 5);
+        }
     } 
-    else if (activeMode === "drag3") {
-        sendInput({ type: "mouseend", button: 2 });
+    else if (activeMode === "scroll2") {
+        if (touchDuration < TAP_TIMEOUT) {
+            sendInput({ type: "mousestart", button: 1 });
+            setTimeout(() => sendInput({ type: "mouseend", button: 1 }), 5);
+        }
     }
-    activeMode = "none";
+
+    // Adaptively down-rank state maps when dropping fingers
+    if (e.touches.length === 0) {
+        activeMode = "none";
+    } else if (e.touches.length === 1) {
+        activeMode = "trackpad";
+        lastTouchX = e.touches[0].clientX;
+        lastTouchY = e.touches[0].clientY;
+    }
 }, { passive: false });
+
+
+// Control Panel Button Listeners
+document.querySelectorAll(".game-btn[data-key]").forEach(btn => {
+    btn.addEventListener("touchstart", (e) => {
+        e.preventDefault();
+        e.stopPropagation(); 
+        
+        if (audio.srcObject) audio.play().catch(() => {});
+
+        sendInput({ type: "btnstart", key: btn.getAttribute("data-key") });
+    });
+    btn.addEventListener("touchend", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        sendInput({ type: "btnend", key: btn.getAttribute("data-key") });
+    });
+});
+
+// Focus Mobile keyboard
+kbToggleBtn.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    ignoreKeyboardButtonClick = true;
+    window.setTimeout(() => {
+        ignoreKeyboardButtonClick = false;
+    }, 500);
+    toggleKeyboard();
+});
+
+kbToggleBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (ignoreKeyboardButtonClick) {
+        return;
+    }
+    toggleKeyboard();
+});
+
+escBtn.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    sendInput({ type: "keyboard", text: "escape" });
+});
+
+keyboardInput.addEventListener("blur", () => {
+    keyboardIsOpen = false;
+});
+
+keyboardInput.addEventListener("focus", () => {
+    keyboardIsOpen = true;
+});
+
+keyboardInput.addEventListener("input", (e) => {
+    if (e.data) {
+        sendInput({ type: "keyboard", text: e.data });
+    } else if (e.inputType === "deleteContentBackward") {
+        sendInput({ type: "keyboard", text: "backspace" });
+    }
+    keyboardInput.value = ""; 
+});
 
 async function start() {
     const offer = await pc.createOffer();

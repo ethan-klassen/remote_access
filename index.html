@@ -56,6 +56,43 @@ audio {
     -webkit-backdrop-filter: blur(3px);
 }
 
+#volumeWrap {
+    position: absolute;
+    top: 15px;
+    left: 15px;
+    display: flex;
+    align-items: center;
+    z-index: 100;
+}
+
+#volumeBtn {
+    width: 40px;
+    height: 40px;
+    border-radius: 999px;
+    padding: 0;
+    font-size: 16px;
+}
+
+#volumePanel {
+    width: 0;
+    opacity: 0;
+    overflow: hidden;
+    margin-left: 0;
+    transition: width 0.18s ease, opacity 0.18s ease, margin-left 0.18s ease;
+}
+
+#volumeWrap.open #volumePanel {
+    width: 150px;
+    opacity: 1;
+    margin-left: 10px;
+}
+
+#volumeSlider {
+    width: 150px;
+    margin: 0;
+    accent-color: #00ffcc;
+}
+
 /* Side Control Panels Overlay Layout */
 .control-panel {
     position: absolute;
@@ -238,6 +275,12 @@ audio {
 <div id="container">
     <input type="text" id="keyboardInput" autocomplete="off" autocapitalize="off">
     <button id="fullscreenBtn">Go Fullscreen</button>
+    <div id="volumeWrap">
+        <button id="volumeBtn" class="game-btn" aria-label="Volume">🔊</button>
+        <div id="volumePanel">
+            <input id="volumeSlider" type="range" min="0" max="100" value="100" aria-label="Stream volume">
+        </div>
+    </div>
 
     <!-- Left Panel: Camera Movement Control Keys -->
     <div id="leftPanel" class="control-panel">
@@ -269,6 +312,9 @@ const video = document.getElementById("remoteVideo");
 const audio = document.getElementById("remoteAudio");
 const container = document.getElementById("container");
 const fullscreenBtn = document.getElementById("fullscreenBtn");
+const volumeWrap = document.getElementById("volumeWrap");
+const volumeBtn = document.getElementById("volumeBtn");
+const volumeSlider = document.getElementById("volumeSlider");
 const kbToggleBtn = document.getElementById("kbToggleBtn");
 const keyboardInput = document.getElementById("keyboardInput");
 const escBtn = document.getElementById("escBtn");
@@ -276,6 +322,22 @@ const movementJoystick = document.getElementById("movementJoystick");
 const cameraJoystick = document.getElementById("cameraJoystick");
 let keyboardIsOpen = false;
 let ignoreKeyboardButtonClick = false;
+let volumePanelOpen = false;
+let audioContext = null;
+let audioGainNode = null;
+let audioSourceNode = null;
+
+function ensureAudioContext() {
+    if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        audioGainNode = audioContext.createGain();
+        audioGainNode.gain.value = 1.0;
+    }
+
+    if (audioContext.state === "suspended") {
+        audioContext.resume().catch(() => {});
+    }
+}
 
 const pc = new RTCPeerConnection({ iceServers:[] });
 const dataChannel = pc.createDataChannel("inputs", { ordered:true });
@@ -296,10 +358,12 @@ pc.ontrack = (event) => {
     if (event.track.kind === "audio") {
         const audioStream = new MediaStream();
         audioStream.addTrack(event.track);
-        audio.srcObject = audioStream;
-        audio.muted = false;
-        audio.volume = 1.0;
-        audio.play().catch(e => console.log("Audio waiting for touch event:", e));
+        ensureAudioContext();
+
+        if (!audioSourceNode) {
+            audioSourceNode = audioContext.createMediaStreamSource(audioStream);
+            audioSourceNode.connect(audioGainNode).connect(audioContext.destination);
+        }
     }
 };
 
@@ -320,6 +384,16 @@ function sendInput(payload) {
     if (dataChannel && dataChannel.readyState === "open") {
         dataChannel.send(JSON.stringify(payload));
     }
+}
+
+function setStreamVolume(value) {
+    const normalized = Math.max(0, Math.min(100, value)) / 100;
+    ensureAudioContext();
+    if (audioGainNode) {
+        audioGainNode.gain.value = normalized;
+    }
+    volumeSlider.value = String(Math.round(normalized * 100));
+    volumeBtn.textContent = normalized === 0 ? "🔇" : normalized < 0.5 ? "🔈" : "🔊";
 }
 
 function createTouchJoystick(element, options) {
@@ -379,7 +453,8 @@ function createTouchJoystick(element, options) {
         }
 
         const nextHorizontal = dx > deadZone ? "rotright" : dx < -deadZone ? "rotleft" : null;
-        const nextVertical = dy > deadZone ? "zoomout" : dy < -deadZone ? "zoomin" : null;
+        const zoomDeadZone = deadZone + 4;
+        const nextVertical = dy > zoomDeadZone ? "zoomout" : dy < -zoomDeadZone ? "zoomin" : null;
 
         if (nextHorizontal !== state.horizontalKey) {
             if (state.horizontalKey) {
@@ -665,6 +740,33 @@ async function start() {
     const answer = await response.json();
     await pc.setRemoteDescription(new RTCSessionDescription(answer));
 }
+
+volumeBtn.addEventListener("click", () => {
+    ensureAudioContext();
+    volumePanelOpen = !volumePanelOpen;
+    volumeWrap.classList.toggle("open", volumePanelOpen);
+});
+
+volumeSlider.addEventListener("input", () => {
+    setStreamVolume(Number(volumeSlider.value));
+});
+
+volumeSlider.addEventListener("touchstart", () => {
+    ensureAudioContext();
+}, { passive: true });
+
+video.addEventListener("touchstart", () => {
+    ensureAudioContext();
+}, { passive: true });
+
+document.addEventListener("click", (e) => {
+    if (!volumeWrap.contains(e.target)) {
+        volumePanelOpen = false;
+        volumeWrap.classList.remove("open");
+    }
+});
+
+setStreamVolume(100);
 
 start();
 </script>

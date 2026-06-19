@@ -195,6 +195,15 @@ async def hold_rotation_task(direction):
     except asyncio.CancelledError:
         pydirectinput.mouseUp(button='right')
 
+async def hold_zoom_task(direction):
+    clicks = 1 if direction == "in" else -1
+    try:
+        while True:
+            native_win32_scroll(clicks)
+            await asyncio.sleep(0.03)
+    except asyncio.CancelledError:
+        pass
+
 async def offer(request):
     params = await request.json()
     offer = RTCSessionDescription(sdp=params["sdp"], type=params["type"])
@@ -255,9 +264,9 @@ async def offer(request):
                 elif k in ["rotleft", "rotright"]:
                     active_loops[k] = asyncio.create_task(hold_rotation_task("left" if k == "rotleft" else "right"))
                 elif k == "zoomin":
-                    native_win32_scroll(1)
+                    active_loops[k] = asyncio.create_task(hold_zoom_task("in"))
                 elif k == "zoomout":
-                    native_win32_scroll(-1)
+                    active_loops[k] = asyncio.create_task(hold_zoom_task("out"))
 
             elif data["type"] == "btnend":
                 k = data["key"]
@@ -274,6 +283,9 @@ async def offer(request):
                 if val == "backspace":
                     keyboard.press(Key.backspace)
                     keyboard.release(Key.backspace)
+                elif val == "escape":
+                    keyboard.press(Key.esc)
+                    keyboard.release(Key.esc)
                 else:
                     keyboard.type(val)
 

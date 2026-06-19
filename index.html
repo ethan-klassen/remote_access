@@ -69,6 +69,27 @@ audio {
 #leftPanel { left: 20px; }
 #rightPanel { right: 20px; }
 
+#leftPanel, #rightPanel {
+    top: 50%;
+    bottom: auto;
+    transform: translateY(-50%);
+}
+
+#leftPanel {
+    left: 20px;
+    align-items: flex-start;
+}
+
+#rightPanel {
+    right: 20px;
+    align-items: flex-end;
+}
+
+#leftPanel .btn-row,
+#rightPanel .btn-row {
+    justify-content: center;
+}
+
 .btn-row {
     display: flex;
     gap: 8px;
@@ -90,6 +111,110 @@ audio {
     justify-content: center;
     backdrop-filter: blur(2px);
     -webkit-backdrop-filter: blur(2px);
+}
+
+.joystick {
+    position: relative;
+    width: 132px;
+    height: 132px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.0);
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    touch-action: none;
+    user-select: none;
+}
+
+.joystick::before {
+    content: "";
+    position: absolute;
+    inset: 12px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.0);
+}
+
+.joystick-stick {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 72px;
+    height: 72px;
+    margin-left: -36px;
+    margin-top: -36px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.28);
+    background: rgba(0, 0, 0, 0.45);
+    color: rgba(255, 255, 255, 0.85);
+    font-family: sans-serif;
+    font-size: 12px;
+    font-weight: bold;
+    letter-spacing: 0.04em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    transition: transform 0.04s linear;
+}
+
+.joystick-axis {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 2px;
+    height: 118px;
+    transform: translate(-50%, -50%);
+    background: linear-gradient(to bottom, transparent, rgba(255, 255, 255, 0.12), transparent);
+    pointer-events: none;
+}
+
+.joystick-axis.horizontal {
+    width: 118px;
+    height: 2px;
+}
+
+.joystick-action {
+    position: absolute;
+    width: 48px;
+    height: 32px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(0, 0, 0, 0.32);
+    color: rgba(255, 255, 255, 0.78);
+    font-family: sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(3px);
+    -webkit-backdrop-filter: blur(3px);
+}
+
+.joystick-action:active {
+    background: rgba(0, 255, 200, 0.42);
+    border-color: #00ffcc;
+    color: #ffffff;
+}
+
+.joystick-action.left-top {
+    top: -52px;
+    left: 0;
+}
+
+.joystick-action.left-bottom {
+    bottom: -52px;
+    left: 0;
+}
+
+.joystick-action.right-top {
+    top: -52px;
+    right: 0;
+}
+
+.joystick-action.right-bottom {
+    bottom: -52px;
+    right: 0;
 }
 
 .game-btn:active {
@@ -116,26 +241,21 @@ audio {
 
     <!-- Left Panel: Camera Movement Control Keys -->
     <div id="leftPanel" class="control-panel">
-        <div class="btn-row">
-            <button class="game-btn" data-key="up">▲</button>
-        </div>
-        <div class="btn-row">
-            <button class="game-btn" data-key="left">◀</button>
-            <button class="game-btn" data-key="down">▼</button>
-            <button class="game-btn" data-key="right">▶</button>
+        <button class="game-btn joystick-action left-top" id="escBtn">Esc</button>
+        <div class="joystick" id="movementJoystick" data-mode="move">
+            <div class="joystick-axis"></div>
+            <div class="joystick-axis horizontal"></div>
+            <div class="joystick-stick">MOVE</div>
         </div>
     </div>
 
     <!-- Right Panel: Camera Modification (Rotations, Zooms, Keyboard Toggle) -->
     <div id="rightPanel" class="control-panel">
-        <div class="btn-row">
-            <button class="game-btn" data-key="zoomin">Z +</button>
-            <button class="game-btn" id="kbToggleBtn">Keyb</button>
-            <button class="game-btn" data-key="zoomout">Z -</button>
-        </div>
-        <div class="btn-row">
-            <button class="game-btn" data-key="rotleft">◀ Rot</button>
-            <button class="game-btn" data-key="rotright">Rot ▶</button>
+        <button class="game-btn joystick-action right-top" id="kbToggleBtn">Keyb</button>
+        <div class="joystick" id="cameraJoystick" data-mode="camera">
+            <div class="joystick-axis"></div>
+            <div class="joystick-axis horizontal"></div>
+            <div class="joystick-stick">CAM</div>
         </div>
     </div>
 
@@ -151,6 +271,11 @@ const container = document.getElementById("container");
 const fullscreenBtn = document.getElementById("fullscreenBtn");
 const kbToggleBtn = document.getElementById("kbToggleBtn");
 const keyboardInput = document.getElementById("keyboardInput");
+const escBtn = document.getElementById("escBtn");
+const movementJoystick = document.getElementById("movementJoystick");
+const cameraJoystick = document.getElementById("cameraJoystick");
+let keyboardIsOpen = false;
+let ignoreKeyboardButtonClick = false;
 
 const pc = new RTCPeerConnection({ iceServers:[] });
 const dataChannel = pc.createDataChannel("inputs", { ordered:true });
@@ -195,6 +320,181 @@ function sendInput(payload) {
     if (dataChannel && dataChannel.readyState === "open") {
         dataChannel.send(JSON.stringify(payload));
     }
+}
+
+function createTouchJoystick(element, options) {
+    const state = {
+        pointerId: null,
+        active: false,
+        startX: 0,
+        startY: 0,
+        offsetX: 0,
+        offsetY: 0,
+        lastMoveTime: 0,
+        horizontalKey: null,
+        verticalKey: null
+    };
+
+    const radius = 42;
+    const deadZone = 10;
+
+    function updateStick(dx, dy) {
+        const limitedX = Math.max(-radius, Math.min(radius, dx));
+        const limitedY = Math.max(-radius, Math.min(radius, dy));
+        const stick = element.querySelector(".joystick-stick");
+        if (stick) {
+            stick.style.transform = `translate(${limitedX}px, ${limitedY}px)`;
+        }
+    }
+
+    function resetStick() {
+        updateStick(0, 0);
+    }
+
+    function emitMovement(dx, dy) {
+        if (options.mode === "move") {
+            const nextHorizontal = dx > deadZone ? "right" : dx < -deadZone ? "left" : null;
+            const nextVertical = dy > deadZone ? "down" : dy < -deadZone ? "up" : null;
+
+            if (nextHorizontal !== state.horizontalKey) {
+                if (state.horizontalKey) {
+                    sendInput({ type: "btnend", key: state.horizontalKey });
+                }
+                state.horizontalKey = nextHorizontal;
+                if (state.horizontalKey) {
+                    sendInput({ type: "btnstart", key: state.horizontalKey });
+                }
+            }
+
+            if (nextVertical !== state.verticalKey) {
+                if (state.verticalKey) {
+                    sendInput({ type: "btnend", key: state.verticalKey });
+                }
+                state.verticalKey = nextVertical;
+                if (state.verticalKey) {
+                    sendInput({ type: "btnstart", key: state.verticalKey });
+                }
+            }
+            return;
+        }
+
+        const nextHorizontal = dx > deadZone ? "rotright" : dx < -deadZone ? "rotleft" : null;
+        const nextVertical = dy > deadZone ? "zoomout" : dy < -deadZone ? "zoomin" : null;
+
+        if (nextHorizontal !== state.horizontalKey) {
+            if (state.horizontalKey) {
+                sendInput({ type: "btnend", key: state.horizontalKey });
+            }
+            state.horizontalKey = nextHorizontal;
+            if (state.horizontalKey) {
+                sendInput({ type: "btnstart", key: state.horizontalKey });
+            }
+        }
+
+        if (nextVertical !== state.verticalKey) {
+            if (state.verticalKey) {
+                sendInput({ type: "btnend", key: state.verticalKey });
+            }
+            state.verticalKey = nextVertical;
+            if (state.verticalKey) {
+                sendInput({ type: "btnstart", key: state.verticalKey });
+            }
+        }
+    }
+
+    function stopActions() {
+        if (options.mode === "camera" || options.mode === "move") {
+            if (state.horizontalKey) {
+                sendInput({ type: "btnend", key: state.horizontalKey });
+            }
+            if (state.verticalKey) {
+                sendInput({ type: "btnend", key: state.verticalKey });
+            }
+        }
+        state.horizontalKey = null;
+        state.verticalKey = null;
+    }
+
+    element.addEventListener("touchstart", (e) => {
+        e.preventDefault();
+        const touch = e.changedTouches[0];
+        if (!touch) {
+            return;
+        }
+
+        state.pointerId = touch.identifier;
+        state.active = true;
+        state.startX = touch.clientX;
+        state.startY = touch.clientY;
+        state.offsetX = 0;
+        state.offsetY = 0;
+        state.lastMoveTime = 0;
+        resetStick();
+    }, { passive: false });
+
+    element.addEventListener("touchmove", (e) => {
+        if (!state.active) {
+            return;
+        }
+        e.preventDefault();
+
+        let touch = null;
+        for (const item of e.changedTouches) {
+            if (item.identifier === state.pointerId) {
+                touch = item;
+                break;
+            }
+        }
+        if (!touch) {
+            return;
+        }
+
+        state.offsetX = touch.clientX - state.startX;
+        state.offsetY = touch.clientY - state.startY;
+
+        const length = Math.hypot(state.offsetX, state.offsetY);
+        const scale = length > radius && length > 0 ? radius / length : 1;
+        const dx = state.offsetX * scale;
+        const dy = state.offsetY * scale;
+
+        updateStick(dx, dy);
+        emitMovement(state.offsetX, state.offsetY);
+    }, { passive: false });
+
+    function endTouch() {
+        if (!state.active) {
+            return;
+        }
+        state.active = false;
+        state.pointerId = null;
+        resetStick();
+        stopActions();
+    }
+
+    element.addEventListener("touchend", (e) => {
+        e.preventDefault();
+        endTouch();
+    }, { passive: false });
+
+    element.addEventListener("touchcancel", (e) => {
+        e.preventDefault();
+        endTouch();
+    }, { passive: false });
+}
+
+createTouchJoystick(movementJoystick, { mode: "move" });
+createTouchJoystick(cameraJoystick, { mode: "camera" });
+
+function toggleKeyboard() {
+    if (keyboardIsOpen || document.activeElement === keyboardInput) {
+        keyboardInput.blur();
+        keyboardIsOpen = false;
+        return;
+    }
+
+    keyboardInput.value = "";
+    keyboardInput.focus({ preventScroll: true });
+    keyboardIsOpen = true;
 }
 
 // Trackpad Mode Gestures Execution Engine
@@ -314,7 +614,33 @@ document.querySelectorAll(".game-btn[data-key]").forEach(btn => {
 kbToggleBtn.addEventListener("touchstart", (e) => {
     e.preventDefault();
     e.stopPropagation();
-    keyboardInput.focus();
+    ignoreKeyboardButtonClick = true;
+    window.setTimeout(() => {
+        ignoreKeyboardButtonClick = false;
+    }, 500);
+    toggleKeyboard();
+});
+
+kbToggleBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    if (ignoreKeyboardButtonClick) {
+        return;
+    }
+    toggleKeyboard();
+});
+
+escBtn.addEventListener("touchstart", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    sendInput({ type: "keyboard", text: "escape" });
+});
+
+keyboardInput.addEventListener("blur", () => {
+    keyboardIsOpen = false;
+});
+
+keyboardInput.addEventListener("focus", () => {
+    keyboardIsOpen = true;
 });
 
 keyboardInput.addEventListener("input", (e) => {

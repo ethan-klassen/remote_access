@@ -219,8 +219,8 @@ SERVER_CONTROLLER = None
 
 
 class RemoteAccessServerController:
-    def __init__(self, app, host="0.0.0.0", port=8080):
-        self.app = app
+    def __init__(self, app_factory, host="0.0.0.0", port=8080):
+        self.app_factory = app_factory
         self.host = host
         self.port = port
         self.running = False
@@ -229,6 +229,7 @@ class RemoteAccessServerController:
         self._runner = None
         self._site = None
         self._stop_event = None
+        self.app = None
 
     def start(self):
         if self.running or self._thread is not None:
@@ -238,11 +239,13 @@ class RemoteAccessServerController:
             try:
                 self._loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(self._loop)
+                self.app = self.app_factory()
                 self._loop.run_until_complete(self._run_server())
             except Exception as exc:
                 self.running = False
                 self._thread = None
                 self._loop = None
+                self.app = None
                 print("Server startup failed:", exc)
                 push_gui_update(status=f"Startup failed: {exc}", address=f"http://{self.host}:{self.port}")
 
@@ -280,6 +283,7 @@ class RemoteAccessServerController:
             await self._site.stop()
         if self._runner is not None:
             await self._runner.cleanup()
+        self.app = None
         self.running = False
         self._site = None
         self._runner = None
@@ -656,12 +660,14 @@ async def offer(request):
         text=json.dumps({"sdp": pc.localDescription.sdp, "type": pc.localDescription.type})
     )
 
-app = web.Application()
-app.router.add_get("/", index)
-app.router.add_post("/offer", offer)
+def create_app():
+    app = web.Application()
+    app.router.add_get("/", index)
+    app.router.add_post("/offer", offer)
+    return app
 
 if __name__ == "__main__":
-    SERVER_CONTROLLER = RemoteAccessServerController(app)
+    SERVER_CONTROLLER = RemoteAccessServerController(create_app)
     push_gui_update(status="Ready", address=f"http://{SERVER_CONTROLLER.host}:{SERVER_CONTROLLER.port}")
     if GUI_ENABLED and tk is not None:
         start_gui()

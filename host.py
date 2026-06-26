@@ -384,8 +384,18 @@ def start_gui():
         tk.Label(info_frame, textvariable=client_var, bg="#181818", fg="#f5f5f5", anchor="w", padx=8, pady=4).grid(row=1, column=0, columnspan=2, sticky="ew", padx=4, pady=2)
         info_frame.configure(padx=4, pady=4)
 
+        control_frame = tk.Frame(root, bg="#121212")
+        control_frame.grid(row=2, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 6))
+        control_frame.columnconfigure(0, weight=1)
+
+        button = tk.Button(control_frame, textvariable=start_stop_var, command=toggle_server_state, bg="#2f6fed", fg="white", padx=10, pady=10, font=("Segoe UI", 12, "bold"))
+        button.grid(row=0, column=0, sticky="ew")
+
+        instruction_label = tk.Label(control_frame, text="Start the server to accept remote clients.", bg="#121212", fg="#c0c0c0", anchor="center", font=("Segoe UI", 9))
+        instruction_label.grid(row=1, column=0, sticky="ew", pady=(6, 0))
+
         card_frame = tk.Frame(root, bg="#1f1f1f", bd=1, relief="solid")
-        card_frame.grid(row=2, column=0, columnspan=2, sticky="ew", padx=10, pady=6)
+        card_frame.grid(row=3, column=0, columnspan=2, sticky="ew", padx=10, pady=6)
         card_frame.columnconfigure(0, weight=1)
 
         tk.Label(card_frame, text="Connected Client Details", bg="#1f1f1f", fg="#f5f5f5", font=("Segoe UI", 11, "bold"), anchor="w", padx=12, pady=10).grid(row=0, column=0, sticky="ew")
@@ -397,11 +407,7 @@ def start_gui():
         tk.Label(card_frame, textvariable=timezone_var, bg="#1f1f1f", fg="#d0d0d0", anchor="w", padx=12, pady=2).grid(row=6, column=0, sticky="ew")
         tk.Label(card_frame, textvariable=geo_var, bg="#1f1f1f", fg="#d0d0d0", anchor="w", padx=12, pady=2).grid(row=7, column=0, sticky="ew", pady=(2, 10))
 
-        button = tk.Button(root, textvariable=start_stop_var, command=toggle_server_state, bg="#2f6fed", fg="white", padx=8, pady=8, font=("Segoe UI", 11, "bold"))
-        button.grid(row=3, column=0, columnspan=2, padx=10, pady=(0, 6), sticky="ew")
-
-        instruction_label = tk.Label(root, text="Press Start to open the remote access listener.", bg="#121212", fg="#c0c0c0", anchor="center", font=("Segoe UI", 9))
-        instruction_label.grid(row=4, column=0, columnspan=2, padx=10, pady=(0, 6), sticky="ew")
+        root.rowconfigure(3, weight=1)
 
         def update_button_label():
             if SERVER_CONTROLLER is not None and SERVER_CONTROLLER.running:

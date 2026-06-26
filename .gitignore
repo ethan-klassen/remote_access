@@ -1,0 +1,5 @@
+# Ignore the metadata containing IP/location in the root project folder so I don't doxx myself
+/client_metadata.json
+
+# Ignore all __pycache__ folders anywhere in the project
+__pycache__/

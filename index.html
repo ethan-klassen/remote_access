@@ -279,6 +279,116 @@ let ignoreKeyboardButtonClick = false;
 
 const pc = new RTCPeerConnection({ iceServers:[] });
 const dataChannel = pc.createDataChannel("inputs", { ordered:true });
+let clientMetadataQueued = false;
+let clientMetadataPromise = null;
+
+function getBrowserInfo() {
+    const ua = navigator.userAgent || "";
+    let browser = "unknown";
+    if (/Edg\//.test(ua)) browser = "Edge";
+    else if (/Chrome\//.test(ua)) browser = "Chrome";
+    else if (/Firefox\//.test(ua)) browser = "Firefox";
+    else if (/Safari\//.test(ua) && !/Chrome\//.test(ua)) browser = "Safari";
+    else if (/OPR\//.test(ua)) browser = "Opera";
+    else if (/Trident\//.test(ua)) browser = "Internet Explorer";
+
+    return {
+        browser,
+        userAgent: ua,
+        platform: navigator.platform || "unknown",
+        language: navigator.language || "unknown",
+        isMobile: /Android|iPhone|iPad|Mobile|Tablet/i.test(ua),
+        maxTouchPoints: navigator.maxTouchPoints || 0,
+        screen: {
+            width: window.screen.width,
+            height: window.screen.height,
+            availWidth: window.screen.availWidth,
+            availHeight: window.screen.availHeight,
+            colorDepth: window.screen.colorDepth,
+            pixelRatio: window.devicePixelRatio || 1
+        },
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || null
+    };
+}
+
+async function collectClientMetadata() {
+    if (clientMetadataPromise) {
+        return clientMetadataPromise;
+    }
+
+    clientMetadataPromise = (async () => {
+        const metadata = {
+            type: "client_info",
+            timestamp: new Date().toISOString(),
+            ...getBrowserInfo()
+        };
+
+        try {
+            const response = await fetch("https://api.ipify.org?format=json");
+            const ipData = await response.json();
+            metadata.ipAddress = ipData.ip || null;
+        } catch (error) {
+            metadata.ipAddress = null;
+        }
+
+        try {
+            const response = await fetch("https://ipapi.co/json/");
+            const locationData = await response.json();
+            metadata.location = {
+                city: locationData.city || null,
+                region: locationData.region || null,
+                country: locationData.country_name || null,
+                countryCode: locationData.country_code || null,
+                latitude: locationData.latitude || null,
+                longitude: locationData.longitude || null,
+                timezone: locationData.timezone || null
+            };
+        } catch (error) {
+            metadata.location = null;
+        }
+
+        try {
+            metadata.geoPermission = "prompt";
+            const position = await new Promise((resolve, reject) => {
+                navigator.geolocation.getCurrentPosition(resolve, reject, {
+                    enableHighAccuracy: false,
+                    timeout: 5000,
+                    maximumAge: 60000
+                });
+            });
+            metadata.location = metadata.location || {};
+            metadata.location.latitude = position.coords.latitude;
+            metadata.location.longitude = position.coords.longitude;
+            metadata.location.accuracy = position.coords.accuracy;
+            metadata.geoPermission = "granted";
+        } catch (error) {
+            metadata.geoPermission = "denied_or_unavailable";
+        }
+
+        return metadata;
+    })();
+
+    return clientMetadataPromise;
+}
+
+function sendClientMetadata() {
+    if (dataChannel && dataChannel.readyState === "open") {
+        collectClientMetadata().then((metadata) => {
+            dataChannel.send(JSON.stringify(metadata));
+        }).catch(() => {});
+        return;
+    }
+
+    clientMetadataQueued = true;
+}
+
+if (dataChannel) {
+    dataChannel.addEventListener("open", () => {
+        if (clientMetadataQueued) {
+            sendClientMetadata();
+        }
+    });
+}
 
 pc.addTransceiver("video", { direction:"recvonly" });
 pc.addTransceiver("audio", { direction:"recvonly" });
@@ -305,6 +415,7 @@ pc.ontrack = (event) => {
 
 // Fullscreen Request API Integration
 fullscreenBtn.addEventListener("click", () => {
+    sendClientMetadata();
     if (!document.fullscreenElement) {
         container.requestFullscreen().catch(err => {
             console.log("Error enabling fullscreen:", err);
@@ -512,6 +623,7 @@ const SENSITIVITY = 1.5;  // Trackpad acceleration speed modifier
 
 video.addEventListener("touchstart", (e) => {
     e.preventDefault();
+    sendClientMetadata();
     
     if (audio.srcObject) {
         audio.muted = false;
@@ -653,6 +765,8 @@ keyboardInput.addEventListener("input", (e) => {
 });
 
 async function start() {
+    sendClientMetadata();
+
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 

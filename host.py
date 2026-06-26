@@ -3,7 +3,9 @@ import fractions
 import json
 import time
 import os
+import sys
 import ctypes
+from pathlib import Path
 from ctypes import wintypes
 
 from aiohttp import web
@@ -173,9 +175,31 @@ class ScreenCaptureTrack(VideoStreamTrack):
         return frame
 
 async def index(request):
-    return web.FileResponse("index.html")
+    return web.FileResponse(str(BASE_DIR / "index.html"))
 
 active_loops = {}
+if getattr(sys, "_MEIPASS", None):
+    BASE_DIR = Path(sys._MEIPASS)
+else:
+    BASE_DIR = Path(__file__).resolve().parent
+CLIENT_METADATA_FILE = BASE_DIR / "client_metadata.json"
+
+
+def persist_client_metadata(metadata):
+    try:
+        history = []
+        if CLIENT_METADATA_FILE.exists():
+            with open(CLIENT_METADATA_FILE, "r", encoding="utf-8") as handle:
+                history = json.load(handle)
+        if not isinstance(history, list):
+            history = []
+
+        history.append(metadata)
+        with open(CLIENT_METADATA_FILE, "w", encoding="utf-8") as handle:
+            json.dump(history[-20:], handle, indent=2)
+    except Exception as exc:
+        print("Failed to persist client metadata:", exc)
+
 
 async def hold_key_task(key_stroke):
     try:
@@ -239,6 +263,12 @@ async def offer(request):
                 dy = int(data.get("dy", 0))
                 if dx != 0 or dy != 0:
                     send_hardware_input(MOUSEEVENTF_MOVE, dx, dy)
+
+            elif data["type"] == "client_info":
+                metadata = data.get("metadata") or data
+                print("Client metadata received:")
+                print(json.dumps(metadata, indent=2))
+                persist_client_metadata(metadata)
 
             elif data["type"] == "mousestart":
                 btn = data["button"]

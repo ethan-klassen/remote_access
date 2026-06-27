@@ -338,6 +338,30 @@ def stop_and_exit():
     raise SystemExit(0)
 
 
+def get_tray_icon_image():
+    if Image is None:
+        return None
+    candidates = [
+        BASE_DIR / "icons" / "favicon.ico",
+        BASE_DIR / "icons" / "android-chrome-192x192.png",
+        BASE_DIR / "icons" / "apple-touch-icon.png",
+    ]
+    for icon_path in candidates:
+        try:
+            if not icon_path.exists():
+                continue
+            image = Image.open(icon_path)
+            if image.mode != "RGBA":
+                image = image.convert("RGBA")
+            return image.resize((64, 64))
+        except Exception:
+            continue
+    try:
+        return Image.new("RGBA", (64, 64), color=(22, 119, 255))
+    except Exception:
+        return None
+
+
 def start_gui():
     global GUI_THREAD, GUI_ROOT
     if not GUI_ENABLED or tk is None:
@@ -348,6 +372,12 @@ def start_gui():
         root = tk.Tk()
         GUI_ROOT = root
         root.title("Remote Access")
+        icon_path = BASE_DIR / "icons" / "favicon.ico"
+        if icon_path.exists():
+            try:
+                root.iconbitmap(str(icon_path))
+            except Exception:
+                pass
         root.geometry("400x360")
         root.resizable(False, False)
         root.configure(bg="#121212")
@@ -475,9 +505,11 @@ def start_gui():
             update_button_label()
             root.after(150, refresh)
 
-        if pystray is not None and Image is not None:
+        if pystray is not None:
             try:
-                image = Image.new("RGB", (64, 64), color=(22, 119, 255))
+                image = get_tray_icon_image()
+                if image is None:
+                    raise RuntimeError("No tray icon available")
                 menu = pystray.Menu(
                     pystray.MenuItem("Show/Hide", toggle_window_visibility),
                     pystray.MenuItem("Start/Stop", toggle_server_state),
@@ -664,6 +696,7 @@ def create_app():
     app = web.Application()
     app.router.add_get("/", index)
     app.router.add_post("/offer", offer)
+    app.router.add_static("/icons/", path=str(BASE_DIR / "icons"), name="icons")
     return app
 
 if __name__ == "__main__":

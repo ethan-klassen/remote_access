@@ -24,6 +24,12 @@ except Exception:
 pystray = None
 try:
     pystray = importlib.import_module("pystray")
+    try:
+        import pystray._win32  # Ensure the pystray Windows backend is included in frozen builds
+        import pystray._base
+        import pystray._util
+    except Exception:
+        pass
 except Exception:
     pystray = None
 
@@ -327,15 +333,37 @@ def toggle_window_visibility():
         GUI_ROOT.withdraw()
 
 
+def hide_to_tray():
+    global GUI_ROOT, TRAY_ICON
+    if GUI_ROOT is None or not GUI_ROOT.winfo_exists():
+        return
+    if TRAY_ICON is None:
+        stop_and_exit()
+        return
+    GUI_ROOT.withdraw()
+    push_gui_update(status="Hidden to tray")
+
+
 def stop_and_exit():
     global GUI_ROOT, TRAY_ICON
     if SERVER_CONTROLLER is not None:
         SERVER_CONTROLLER.stop()
     if GUI_ROOT is not None and GUI_ROOT.winfo_exists():
-        GUI_ROOT.destroy()
+        try:
+            GUI_ROOT.destroy()
+        except Exception:
+            pass
     if TRAY_ICON is not None:
-        TRAY_ICON.stop()
-    raise SystemExit(0)
+        try:
+            TRAY_ICON.stop()
+        except Exception:
+            pass
+    try:
+        sys.exit(0)
+    except SystemExit:
+        os._exit(0)
+    except Exception:
+        os._exit(0)
 
 
 def get_tray_icon_image():
@@ -505,6 +533,7 @@ def start_gui():
             update_button_label()
             root.after(150, refresh)
 
+        tray_started = False
         if pystray is not None:
             try:
                 image = get_tray_icon_image()
@@ -517,10 +546,14 @@ def start_gui():
                 )
                 TRAY_ICON = pystray.Icon("remote_access", image, "Remote Access", menu)
                 threading.Thread(target=TRAY_ICON.run, daemon=True).start()
+                tray_started = True
             except Exception as exc:
                 print("Tray icon unavailable:", exc)
 
-        root.protocol("WM_DELETE_WINDOW", lambda: root.withdraw())
+        if tray_started:
+            root.protocol("WM_DELETE_WINDOW", hide_to_tray)
+        else:
+            root.protocol("WM_DELETE_WINDOW", stop_and_exit)
         root.after(150, refresh)
         root.mainloop()
 

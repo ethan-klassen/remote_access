@@ -4,6 +4,36 @@ Lightweight personal remote desktop using WebRTC (Python host + browser client).
 
 This project provides a simple WebRTC-based remote-control server that streams the host desktop (video + optional system audio) and accepts input over a data channel from a browser client. It is designed for personal use (one host and one client) and works well over a Tailscale tailnet to avoid TURN servers.
 
+
+# Daily Usage (for users)
+
+## Quickstart
+### For LOCAL (within your own home internet) usage
+1. Install VB-Audio Virtual Cable Drivers on your Windows PC
+2. Press `Win + R` and type `mmsys.cpl`. Set the VB-Cable as your input in Playback. Then in the "Recording" tab select the CABLE Output and under "Listen" check the box that says `Listen to this device`. Set the playback through this device to your regular headhpones/speakers. Test to make sure audio still works.
+3. Open your PC's command line interface by clicking the Windows key and typing `cmd` in the Windows search bar.
+4. Type `ipconfig` and find the line that looks like:
+`IPv4 Address. . . . . . . . . . . : X.X.X.XXX` where the X's are numbers. This is your PC's IP address on the local network. Leave this open or remember it.
+5. Download the `host.exe` file from this github page under the `Releases` tab and run it. If a Windows warning asks if you want to allow this application network permission, grant it.
+6. Click the big blue "Start" button.
+7. On your mobile device open an internet browser such as Chrome or Safari and in the address bar at the top type your PC's IP address followed by a colon and the port number displayed in the address in the app on your PC (by default 8080). The full address bar should look something like this: `XX.X.X.XXX:8080`
+8. You should now see a black screen with some buttons on the outside edges. Wiggle your finger on the screen back and forth a few times in the middle and wait a moment for the connection to load. This may take upwards of 10 seconds. Your PC's screen should come alive on your device and you should have full control of it!
+
+### For WAN (outside your local network) usage
+1. Install VB-Audio Virtual Cable Drivers on your Windows PC
+2. Press `Win + R` and type `mmsys.cpl`. Set the VB-Cable as your input in Playback. Then in the "Recording" tab select the CABLE Output and under "Listen" check the box that says `Listen to this device`. Set the playback through this device to your regular headhpones/speakers. Test to make sure audio still works.
+3. Install Tailscale on both your PC and desired mobile device and sign in with the same account (or invite the second account to your Tailnet).
+4. Once you get your PC setup and Tailscale running, connect to the same Tailnet on your phone and click on your desktop device's name. Look for the MagicDNS name, it should be in the format `[device-name].[your-tailnet].ts.net`. Copy this address.
+5. Download the `host.exe` file from this github page under the `Releases` tab and run it. If a Windows warning asks if you want to allow this application network permission, grant it.
+6. Click the big blue "Start" button.
+7. On your mobile device open an internet browser such as Chrome or Safari and in the address bar at the top type paste the copied MagicDNS from Tailscale followed by a colon and the port number displayed in the address in the app on your PC (by default 8080). The full address bar should look something like this: `[device-name].[your-tailnet].ts.net:8080`
+8. You should now see a black screen with some buttons on the outside edges. Wiggle your finger on the screen back and forth a few times in the middle and wait a moment for the connection to load. This may take upwards of 10 seconds. Your PC's screen should come alive on your device and you should have full control of it!
+*Note that you can use the application through Tailscale locally as well, though it serves no benefit over the previously mentioned LAN steps* 
+
+
+
+# For Devs / py users
+
 Contents
 
 - `host.py` — main host server (aiohttp + aiortc) that captures the screen, exposes a simple signaling endpoint (`/offer`) and accepts inputs.

@@ -3,3 +3,8 @@
 
 # Ignore all __pycache__ folders anywhere in the project
 __pycache__/
+
+# Ignore build and dist folders, and host.spec
+build/
+dist/
+/host.spec

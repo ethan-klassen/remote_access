@@ -15,6 +15,9 @@
 <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
 <link rel="manifest" href="/icons/site.webmanifest">
 <meta name="theme-color" content="#0f172a">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet">
 
 <style>
 html, body {
@@ -59,6 +62,35 @@ audio {
     z-index: 100;
     backdrop-filter: blur(3px);
     -webkit-backdrop-filter: blur(3px);
+}
+
+#volumeControl {
+    position: absolute;
+    top: 15px;
+    left: 15px;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.65);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+#volumeControl input[type="range"] {
+    width: 110px;
+    accent-color: #22c55e;
+}
+
+#volumeValue {
+    color: rgba(255, 255, 255, 0.9);
+    font-family: sans-serif;
+    font-size: 12px;
+    min-width: 36px;
+    text-align: right;
 }
 
 /* Side Control Panels Overlay Layout */
@@ -242,6 +274,11 @@ audio {
 
 <div id="container">
     <input type="text" id="keyboardInput" autocomplete="off" autocapitalize="off">
+    <div id="volumeControl">
+        <span class="material-symbols-outlined" style="color: rgba(255,255,255,0.9); font-size: 16px;">volume_up</span>
+        <input id="volumeSlider" type="range" min="0" max="100" value="100" step="1">
+        <span id="volumeValue">100%</span>
+    </div>
     <button id="fullscreenBtn">Go Fullscreen</button>
 
     <!-- Left Panel: Camera Movement Control Keys -->
@@ -279,8 +316,11 @@ const keyboardInput = document.getElementById("keyboardInput");
 const escBtn = document.getElementById("escBtn");
 const movementJoystick = document.getElementById("movementJoystick");
 const cameraJoystick = document.getElementById("cameraJoystick");
+const volumeSlider = document.getElementById("volumeSlider");
+const volumeValue = document.getElementById("volumeValue");
 let keyboardIsOpen = false;
 let ignoreKeyboardButtonClick = false;
+let pendingVolume = 1.0;
 
 const pc = new RTCPeerConnection({ iceServers:[] });
 const dataChannel = pc.createDataChannel("inputs", { ordered:true });
@@ -392,6 +432,7 @@ if (dataChannel) {
         if (clientMetadataQueued) {
             sendClientMetadata();
         }
+        sendInput({ type: "volume", level: pendingVolume });
     });
 }
 
@@ -437,6 +478,17 @@ function sendInput(payload) {
         dataChannel.send(JSON.stringify(payload));
     }
 }
+
+function updateVolume(level) {
+    pendingVolume = level;
+    volumeValue.textContent = `${Math.round(level * 100)}%`;
+    sendInput({ type: "volume", level });
+}
+
+volumeSlider.addEventListener("input", () => {
+    const level = Number(volumeSlider.value) / 100;
+    updateVolume(level);
+});
 
 function createTouchJoystick(element, options) {
     const state = {

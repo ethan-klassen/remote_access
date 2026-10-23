@@ -4,6 +4,7 @@ import importlib
 import json
 import os
 import queue
+import struct
 import sys
 import threading
 import time
@@ -40,6 +41,7 @@ from aiortc import (
     VideoStreamTrack
 )
 from aiortc.contrib.media import MediaPlayer
+from aiortc.mediastreams import MediaStreamTrack
 from aiortc.rtcrtpsender import RTCRtpSender
 
 import av
@@ -124,6 +126,72 @@ player = MediaPlayer(
     format="dshow",
     options={"audio_buffer_size": "20"}
 )
+
+def _apply_gain_to_plane_bytes(plane_bytes, sample_width, gain):
+    if gain == 1.0 or not plane_bytes:
+        return plane_bytes
+
+    if sample_width == 1:
+        out = bytearray(len(plane_bytes))
+        for index, value in enumerate(plane_bytes):
+            signed = value - 128
+            scaled = int(round(signed * gain))
+            clamped = max(-128, min(127, scaled))
+            out[index] = clamped + 128
+        return bytes(out)
+
+    if sample_width == 2:
+        sample_count = len(plane_bytes) // 2
+        if sample_count <= 0:
+            return plane_bytes
+        fmt = f"<{sample_count}h"
+        samples = struct.unpack(fmt, plane_bytes)
+        scaled = [max(-32768, min(32767, int(round(sample * gain)))) for sample in samples]
+        return struct.pack(fmt, *scaled)
+
+    if sample_width == 4:
+        sample_count = len(plane_bytes) // 4
+        if sample_count <= 0:
+            return plane_bytes
+        fmt = f"<{sample_count}f"
+        samples = struct.unpack(fmt, plane_bytes)
+        scaled = [max(-1.0, min(1.0, sample * gain)) for sample in samples]
+        return struct.pack(fmt, *scaled)
+
+    return plane_bytes
+
+
+class GainAudioStreamTrack(MediaStreamTrack):
+    kind = "audio"
+
+    def __init__(self, source_track):
+        super().__init__()
+        self.source_track = source_track
+        self.gain = 1.0
+
+    async def recv(self):
+        frame = await self.source_track.recv()
+        if self.gain == 1.0 or frame is None:
+            return frame
+
+        try:
+            if not frame.planes:
+                return frame
+
+            sample_width = 2
+            format_name = getattr(getattr(frame, "format", None), "name", "") or ""
+            if format_name in {"s8", "u8"}:
+                sample_width = 1
+            elif format_name in {"s32", "s32p", "flt", "fltp"}:
+                sample_width = 4
+
+            plane_bytes = bytes(frame.planes[0])
+            adjusted_bytes = _apply_gain_to_plane_bytes(plane_bytes, sample_width, self.gain)
+            frame.planes[0].update(adjusted_bytes)
+        except Exception as exc:
+            print(f"Audio gain adjustment failed: {exc}")
+
+        return frame
 
 class ScreenCaptureTrack(VideoStreamTrack):
     def __init__(self):
@@ -615,8 +683,10 @@ async def offer(request):
     video_track = ScreenCaptureTrack()
     pc.addTrack(video_track)
 
+    audio_track = None
     if player.audio:
-        pc.addTrack(player.audio)
+        audio_track = GainAudioStreamTrack(player.audio)
+        pc.addTrack(audio_track)
 
     for transceiver in pc.getTransceivers():
         if transceiver.kind == "video":
@@ -703,6 +773,16 @@ async def offer(request):
                     keyboard.release(Key.esc)
                 else:
                     keyboard.type(val)
+
+            elif data["type"] == "volume":
+                try:
+                    if audio_track is not None:
+                        level = float(data.get("level", 1.0))
+                        level = max(0.0, min(1.0, level))
+                        audio_track.gain = level
+                        print(f"Audio volume set to {level:.2f}")
+                except Exception as exc:
+                    print("Volume update failed:", exc)
 
         except Exception as e:
             print("Input Task Run Error:", e)

@@ -56,7 +56,7 @@ Python dependencies (install into a virtualenv):
 pip install aiohttp aiortc av mss pydirectinput pynput
 ```
 
-If you use VB-Audio cable for system audio capture, configure that on the host and ensure the `MediaPlayer` device name in `host.py` matches.
+The host window's **Audio capture device** dropdown lists available Windows audio capture devices. Select one before starting the server; choose **None** to disable audio capture. The VB-Audio cable remains the default when it is available.
 
 Run the host
 

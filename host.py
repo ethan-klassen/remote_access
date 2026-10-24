@@ -4,6 +4,7 @@ import importlib
 import json
 import os
 import queue
+import re
 import struct
 import sys
 import threading
@@ -14,8 +15,10 @@ from ctypes import wintypes
 
 try:
     import tkinter as tk
+    from tkinter import ttk
 except Exception:
     tk = None
+    ttk = None
 
 try:
     from PIL import Image
@@ -120,12 +123,50 @@ def get_windows_cursor_position():
     ctypes.windll.user32.GetCursorPos(ctypes.byref(pt))
     return pt.x, pt.y
 
-# System audio capture
-player = MediaPlayer(
-    "audio=CABLE Output (VB-Audio Virtual Cable)",
-    format="dshow",
-    options={"audio_buffer_size": "20"}
-)
+DEFAULT_AUDIO_CAPTURE_DEVICE = "CABLE Output (VB-Audio Virtual Cable)"
+AUDIO_CAPTURE_DEVICE = DEFAULT_AUDIO_CAPTURE_DEVICE
+player = None
+
+
+def list_audio_capture_devices():
+    previous_log_level = av.logging.get_level()
+    try:
+        av.logging.set_level(av.logging.INFO)
+        try:
+            with av.logging.Capture() as logs:
+                av.open("dummy", format="dshow", options={"list_devices": "true"})
+        except av.error.ExitError as exc:
+            if exc.strerror != "Immediate exit requested":
+                raise
+    finally:
+        av.logging.set_level(previous_log_level)
+
+    device_messages = "".join(
+        message for _, module, message in logs if module == "dshow"
+    )
+    return list(dict.fromkeys(
+        name.strip()
+        for name in re.findall(r'"([^"]+)"\s*\(audio\)', device_messages)
+        if name.strip()
+    ))
+
+
+def create_audio_player(device_name):
+    if device_name is None:
+        return None
+    return MediaPlayer(
+        f"audio={device_name}",
+        format="dshow",
+        options={"audio_buffer_size": "20"}
+    )
+
+
+def stop_audio_player():
+    global player
+    if player is not None and player.audio is not None:
+        player.audio.stop()
+    player = None
+
 
 def _apply_gain_to_plane_bytes(plane_bytes, sample_width, gain):
     if gain == 1.0 or not plane_bytes:
@@ -357,6 +398,7 @@ class RemoteAccessServerController:
             await self._site.stop()
         if self._runner is not None:
             await self._runner.cleanup()
+        stop_audio_player()
         self.app = None
         self.running = False
         self._site = None
@@ -464,7 +506,24 @@ def start_gui():
         return
 
     def run():
-        global GUI_ROOT, TRAY_ICON
+        global AUDIO_CAPTURE_DEVICE, GUI_ROOT, TRAY_ICON
+        try:
+            audio_devices = list_audio_capture_devices()
+            audio_discovery_error = None
+        except av.error.FFmpegError as exc:
+            audio_devices = []
+            audio_discovery_error = str(exc)
+            print("Audio device discovery failed:", exc)
+
+        selected_audio_device = (
+            DEFAULT_AUDIO_CAPTURE_DEVICE
+            if DEFAULT_AUDIO_CAPTURE_DEVICE in audio_devices
+            else "None"
+        )
+        AUDIO_CAPTURE_DEVICE = (
+            None if selected_audio_device == "None" else selected_audio_device
+        )
+
         root = tk.Tk()
         GUI_ROOT = root
         root.title("Remote Access")
@@ -474,13 +533,14 @@ def start_gui():
                 root.iconbitmap(str(icon_path))
             except Exception:
                 pass
-        root.geometry("400x360")
+        root.geometry("400x430")
         root.resizable(False, False)
         root.configure(bg="#121212")
         root.columnconfigure(0, weight=1)
 
         status_var = tk.StringVar(value="Status: Ready")
         address_var = tk.StringVar(value="Address: http://0.0.0.0:8080")
+        audio_device_var = tk.StringVar(value=selected_audio_device)
         client_var = tk.StringVar(value="No client connected")
         connections_var = tk.StringVar(value="0")
         start_stop_var = tk.StringVar(value="Start")
@@ -518,11 +578,48 @@ def start_gui():
         control_frame.grid(row=2, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 6))
         control_frame.columnconfigure(0, weight=1)
 
+        tk.Label(
+            control_frame,
+            text="Audio capture device",
+            bg="#121212",
+            fg="#f5f5f5",
+            anchor="w",
+            font=("Segoe UI", 9, "bold")
+        ).grid(row=0, column=0, sticky="ew")
+        audio_device_menu = ttk.Combobox(
+            control_frame,
+            textvariable=audio_device_var,
+            values=["None"] + audio_devices,
+            state="readonly"
+        )
+        audio_device_menu.grid(row=1, column=0, sticky="ew", pady=(2, 4))
+
+        def select_audio_device(event):
+            global AUDIO_CAPTURE_DEVICE
+            selection = event.widget.get()
+            AUDIO_CAPTURE_DEVICE = None if selection == "None" else selection
+
+        audio_device_menu.bind("<<ComboboxSelected>>", select_audio_device)
+
+        audio_device_status = (
+            f"Audio device discovery failed: {audio_discovery_error}"
+            if audio_discovery_error
+            else "Audio is captured from the selected device."
+        )
+        tk.Label(
+            control_frame,
+            text=audio_device_status,
+            bg="#121212",
+            fg="#c0c0c0",
+            anchor="w",
+            font=("Segoe UI", 8)
+        ).grid(row=2, column=0, sticky="ew", pady=(0, 4))
+
         button = tk.Button(control_frame, textvariable=start_stop_var, command=toggle_server_state, bg="#2f6fed", fg="white", padx=10, pady=10, font=("Segoe UI", 12, "bold"))
-        button.grid(row=0, column=0, sticky="ew")
+        button.grid(row=3, column=0, sticky="ew")
 
         instruction_label = tk.Label(control_frame, text="Start the server to accept remote clients.", bg="#121212", fg="#c0c0c0", anchor="center", font=("Segoe UI", 9))
-        instruction_label.grid(row=1, column=0, sticky="ew", pady=(6, 0))
+        instruction_label.grid(row=4, column=0, sticky="ew", pady=(6, 0))
 
         card_frame = tk.Frame(root, bg="#1f1f1f", bd=1, relief="solid")
         card_frame.grid(row=3, column=0, columnspan=2, sticky="ew", padx=10, pady=6)
@@ -544,6 +641,10 @@ def start_gui():
                 start_stop_var.set("Stop")
             else:
                 start_stop_var.set("Start")
+            if SERVER_CONTROLLER is not None and SERVER_CONTROLLER._thread is not None:
+                audio_device_menu.configure(state="disabled")
+            else:
+                audio_device_menu.configure(state="readonly")
 
         def format_metadata(metadata):
             if not metadata:
@@ -684,7 +785,7 @@ async def offer(request):
     pc.addTrack(video_track)
 
     audio_track = None
-    if player.audio:
+    if player is not None and player.audio:
         audio_track = GainAudioStreamTrack(player.audio)
         pc.addTrack(audio_track)
 
@@ -806,6 +907,9 @@ async def offer(request):
     )
 
 def create_app():
+    global player
+    player = create_audio_player(AUDIO_CAPTURE_DEVICE)
+
     app = web.Application()
     app.router.add_get("/", index)
     app.router.add_post("/offer", offer)

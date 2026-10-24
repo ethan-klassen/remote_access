@@ -1,4 +1,4 @@
-remote_access
+# remote_access
 
 Lightweight personal remote desktop using WebRTC (Python host + browser client).
 
@@ -9,7 +9,7 @@ This project provides a simple WebRTC-based remote-control server that streams t
 
 ## Quickstart
 ### For LOCAL (within your own home internet) usage
-1. Install VB-Audio Virtual Cable Drivers on your Windows PC
+1. Install VB-Audio Virtual Cable Drivers on your Windows PC (if you want audio. You may also use a different audio listener driver if you prefer.)
 2. Press `Win + R` and type `mmsys.cpl`. Set the VB-Cable as your input in Playback. Then in the "Recording" tab select the CABLE Output and under "Listen" check the box that says `Listen to this device`. Set the playback through this device to your regular headhpones/speakers. Test to make sure audio still works.
 3. Open your PC's command line interface by clicking the Windows key and typing `cmd` in the Windows search bar.
 4. Type `ipconfig` and find the line that looks like:
@@ -53,7 +53,7 @@ Prerequisites
 Python dependencies (install into a virtualenv):
 
 ```bash
-pip install aiohttp aiortc av mss pydirectinput pynput
+pip install requirements.txt
 ```
 
 The host window's **Audio capture device** dropdown lists available Windows audio capture devices. Select one before starting the server; choose **None** to disable audio capture. The VB-Audio cable remains the default when it is available.
@@ -103,4 +103,4 @@ Troubleshooting
 - Client can't reach `/offer`: verify you used the host's reachable IP (LAN or Tailscale) and that Windows firewall allows inbound connections on `8080` for Python.
 - Cursor or input not working: ensure `pydirectinput` or `pyautogui` (used in variants) are installed and that the host process has permissions to inject input. On Windows, UAC or other protections may block input injection for certain applications.
 
-Free to use under license -- Developed by Ethan Klassen
+Free to use under license -- Developed by Ethan Klassen (c) Copyright 2026
